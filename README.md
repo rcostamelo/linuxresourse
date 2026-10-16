@@ -119,10 +119,14 @@ root; use sabendo disso.
 > No modo host, a aba **Limpeza** (journal/apt/etc.) aponta para caminhos do container, não do
 > host — rode esses comandos direto no host. O scan de disco e a aba Docker funcionam normalmente.
 
-> **SSH no container**: a imagem inclui `openssh-client` e `sshpass`. Para os modos **Sistema** e
-> **Chave**, monte o diretório `~/.ssh` no container (ex.: `-v ~/.ssh:/home/node/.ssh:ro`) — o modo
-> Sistema passa a listar os apelidos do `config` automaticamente; no modo Chave use o caminho interno
-> (ex.: `/home/node/.ssh/id_ed25519`). As credenciais cifradas e o `master.key` ficam no volume `/data`.
+> **SSH no container**: a imagem inclui `openssh-client` e `sshpass`. O `docker-compose.yml` já monta
+> o `~/.ssh` do usuário que sobe o compose (`"${SSH_DIR:-${HOME}/.ssh}:/home/node/.ssh:ro"`) — funciona
+> em qualquer máquina sem editar; use `SSH_DIR=/caminho` para apontar outro diretório. O modo **Sistema**
+> passa a listar os apelidos do `config`; no modo **Chave** use o caminho interno (ex.:
+> `/home/node/.ssh/id_ed25519`). Detalhes: o container roda como uid **1000** (`node`) — se o seu usuário
+> tiver outro uid, ajuste `user:` no compose para ler a chave `600`; e, para chaves com senha
+> (ssh-agent), descomente o volume do `SSH_AUTH_SOCK`. As credenciais cifradas e o `master.key` ficam
+> no volume `/data`.
 
 ## Abas
 

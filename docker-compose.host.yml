@@ -24,6 +24,9 @@ services:
       - lr-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
       - /:/host:ro
+      # ~/.ssh do usuário que sobe o compose (modo host roda como root, então lê 600).
+      # Sobrescreva com SSH_DIR=/caminho/quando/precisar.
+      - "${SSH_DIR:-${HOME}/.ssh}:/root/.ssh:ro"
     restart: unless-stopped
 
 volumes:

@@ -12,9 +12,19 @@ services:
       DATA_DIR: /data
       TZ: ${TZ:-America/Sao_Paulo}
       DOCKER_GID: ${DOCKER_GID:-999}
+      # Se usar ssh-agent (chave com senha), descomente e use junto com o volume do agent:
+      # SSH_AUTH_SOCK: /run/agent.sock
     volumes:
       - lr-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
+      # ~/.ssh do usuário que sobe o compose (universal entre máquinas/usuários).
+      # Sobrescreva com SSH_DIR=/caminho/quando/precisar. Requer uid do host = 1000
+      # (usuário "node" do container); senão, ajuste "user:" abaixo.
+      - "${SSH_DIR:-${HOME}/.ssh}:/home/node/.ssh:ro"
+      # Se usar ssh-agent (chave com senha), descomente (o socket vem do seu shell):
+      # - "${SSH_AUTH_SOCK}:/run/agent.sock"
+    # Rode como o seu usuário se o uid não for 1000 (para ler a chave privada 600):
+    # user: "${LOR_UID:-1000}:${LOR_GID:-1000}"
     # Acesso ao docker.sock sem rodar como root.
     # Descubra o GID com: stat -c '%g' /var/run/docker.sock
     group_add:
