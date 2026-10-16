@@ -12,8 +12,9 @@ RUN npm run build
 FROM node:24-alpine AS run
 WORKDIR /app
 
-# du (GNU coreutils, usado no scan de disco), ping (latência) e docker CLI (aba Docker)
-RUN apk add --no-cache coreutils iputils docker-cli tzdata
+# du (GNU coreutils, scan de disco), ping (latência), docker CLI (aba Docker),
+# openssh-client + sshpass (aba SSH: chave e senha)
+RUN apk add --no-cache coreutils iputils docker-cli tzdata openssh-client sshpass
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \

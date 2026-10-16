@@ -279,6 +279,122 @@ export interface DockerInspect {
   }
 }
 
+export type SshAuthType = 'key' | 'password' | 'system'
+
+export interface SshDisk {
+  fs: string
+  mount: string
+  total: number
+  used: number
+  avail: number
+  usedPct: number
+}
+
+export interface SshIface {
+  name: string
+  rx: number
+  tx: number
+  rxRate: number
+  txRate: number
+  virtual: boolean
+}
+
+export interface SshMemory {
+  total: number
+  used: number
+  free: number
+  available: number
+  buffers: number
+  cached: number
+  swapTotal: number
+  swapUsed: number
+  memPct: number
+}
+
+export interface SshSnapshot {
+  id: number
+  online: boolean
+  ts: number
+  error: string | null
+  lastSeen: number | null
+  uname?: string | null
+  hostname?: string | null
+  ncpu?: number | null
+  uptime?: number | null
+  loadavg?: [number, number, number] | null
+  cpuUsage?: number | null
+  memory?: SshMemory | null
+  disks?: SshDisk[]
+  primaryDisk?: SshDisk | null
+  network?: { rxRate: number; txRate: number; rxTotal: number; txTotal: number; interfaces: SshIface[] } | null
+  collectMs?: number | null
+}
+
+export interface SshServer {
+  id: number
+  clusterId: number | null
+  name: string
+  host: string
+  port: number
+  username: string
+  authType: SshAuthType
+  hasSecret: boolean
+  logo: string | null
+  createdAt: number
+  updatedAt: number
+  metrics: SshSnapshot | null
+}
+
+export interface SshCluster {
+  id: number | null
+  name: string
+  logo: string | null
+  servers: SshServer[]
+}
+
+export interface SshOverview {
+  ts: number
+  clusters: SshCluster[]
+}
+
+export interface SshServerInput {
+  name: string
+  host: string
+  port: number
+  username: string
+  authType: SshAuthType
+  secret?: string
+  clusterId?: number | null
+  logo?: string | null
+}
+
+export const sshLogoUrl = (name: string | null | undefined): string | null =>
+  name ? `/api/ssh/logo/${name}` : null
+
+export interface SshTestResult {
+  ok: boolean
+  online: boolean
+  error?: string | null
+  hostname?: string | null
+  uname?: string | null
+  latencyMs?: number | null
+}
+
+export interface SshConfigHost {
+  alias: string
+  hostName: string | null
+  user: string | null
+  port: number | null
+  identityFile: string | null
+  proxyJump: string | null
+}
+
+export interface SshConfigResponse {
+  file: string
+  exists: boolean
+  hosts: SshConfigHost[]
+}
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -362,4 +478,17 @@ export const api = {
     postJson<{ ok: boolean; pid: number; signal: string }>('/api/kill', { pid, signal }),
   cleanTasks: () => getJson<CleanTasksResponse>('/api/clean/tasks'),
   cleanRun: (id: string, paths?: string[]) => postJson<CleanRunResult>('/api/clean/run', { id, paths }),
+  sshOverview: () => getJson<SshOverview>('/api/ssh/overview'),
+  sshConfig: () => getJson<SshConfigResponse>('/api/ssh/config'),
+  sshCreateCluster: (name: string, logo?: string | null) =>
+    postJson<{ ok: boolean; cluster: { id: number; name: string; logo: string | null } }>('/api/ssh/clusters', { name, logo }),
+  sshUpdateCluster: (id: number, input: { name?: string; logo?: string | null }) =>
+    postJson<{ ok: boolean; cluster: { id: number; name: string; logo: string | null } }>('/api/ssh/clusters/update', { id, ...input }),
+  sshDeleteCluster: (id: number) => postJson<{ ok: boolean }>('/api/ssh/clusters/delete', { id }),
+  sshCreateServer: (input: SshServerInput) =>
+    postJson<{ ok: boolean; server: SshServer }>('/api/ssh/servers', input),
+  sshUpdateServer: (id: number, input: SshServerInput) =>
+    postJson<{ ok: boolean; server: SshServer }>('/api/ssh/servers/update', { id, ...input }),
+  sshDeleteServer: (id: number) => postJson<{ ok: boolean }>('/api/ssh/servers/delete', { id }),
+  sshTestServer: (id: number) => postJson<SshTestResult>('/api/ssh/servers/test', { id }),
 }

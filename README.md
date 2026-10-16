@@ -1,12 +1,13 @@
 # Linux Resource
 
 Painel web para **gerenciar, monitorar e otimizar** desktops e servidores Linux: disco,
-processos, memória, rede e Docker — tudo em uma única UI, com **login** e sem dependências
-nativas.
+processos, memória, rede, Docker e **servidores remotos via SSH** — tudo em uma única UI, com
+**login** e sem dependências nativas.
 
-- **Backend**: Node puro (sem framework), dados lidos de `/proc`, `/sys`, `du` e Docker.
+- **Backend**: Node puro (sem framework), dados lidos de `/proc`, `/sys`, `du`, Docker e SSH.
 - **Frontend**: React + Vite + shadcn/ui (tema escuro), gráficos em SVG feitos à mão.
 - **Usuários e sessões**: SQLite nativo (`node:sqlite`), senhas com `scrypt`, cookie `HttpOnly`.
+- **Servidores remotos**: coleta **agente-less** por SSH (modo Sistema via `~/.ssh/config`, chave ou senha), agrupada em clusters, com **logo (PNG) por cluster/servidor**.
 - **Docker**: imagem enxuta (~211 MB) e, opcionalmente, modo host (`pid: host` + `/:/host:ro`).
 
 > Roda em **Linux**. Em macOS/Windows o disco e os processos aparecem, mas `/proc`, `du -x`
@@ -20,6 +21,8 @@ nativas.
 | Linux com `/proc` e `/sys` | processos, memória, rede, swap |
 | `du` (GNU coreutils) | scan de disco — `-B1` precisa ser o GNU `du` |
 | `ping` (iputils) | latência na aba Rede (opcional) |
+| `ssh` (OpenSSH client) | aba SSH — coleta em servidores remotos (modos Sistema e Chave) |
+| `sshpass` | aba SSH — **apenas** para autenticação por senha (Sistema/Chave não precisam) |
 | Docker | aba Docker (opcional) |
 
 ## Rodar
@@ -58,6 +61,10 @@ tela de login. Trocar a senha encerra as **outras** sessões do usuário.
   com HTTPS e defina `TRUST_PROXY=1`.
 - Ações destrutivas (`/api/kill`, `/api/clean/run`, `/api/docker/action`) têm confirmação na UI e
   **whitelists** no backend (nunca comando livre).
+- Credenciais SSH (chave/senha) ficam **cifradas** no SQLite (AES-256-GCM) com a chave mestra em
+  `data/master.key` (**0600**, fora do git). Sem essa chave, o banco não revela as credenciais —
+  guarde-a para não perder o acesso aos servidores cadastrados. O modo **Sistema** não guarda
+  segredo: usa o `~/.ssh/config`, o ssh-agent e as chaves do usuário do painel.
 
 ## Configuração
 
@@ -73,6 +80,11 @@ Copie `.env.example` para `.env` (ou exporte as variáveis). Todas são opcionai
 | `DU_CONCURRENCY` | `6` | Paralelismo do scan de disco |
 | `SCAN_ROOT` | — | Prefixo do filesystem a varrer (ex.: `/host` em modo host) |
 | `DU_BIN` / `PING_BIN` / `DOCKER_BIN` | `du` / `ping` / `docker` | Caminhos dos binários |
+| `SSH_BIN` / `SSHPASS_BIN` | `ssh` / `sshpass` | Cliente SSH (senha exige `sshpass`) |
+| `SSH_CONNECT_TIMEOUT` / `SSH_COMMAND_TIMEOUT` | `8` / `20` | Timeouts de conexão e do comando remoto (segundos) |
+| `SSH_CONCURRENCY` / `SSH_CACHE_SEC` | `6` / `4` | Coleta paralela e cache do snapshot por servidor |
+| `SSH_CONFIG_FILE` | `~/.ssh/config` | Arquivo lido para listar apelidos (modo Sistema) |
+| `MASTER_KEY` | — | Chave mestra (hex de 64) para cifrar credenciais; gerada em `data/master.key` (0600) |
 | `TRUST_PROXY` | `0` | Confia em `X-Forwarded-For`/`-Proto` (HTTPS + IP real) |
 
 ## Docker
@@ -107,6 +119,11 @@ root; use sabendo disso.
 > No modo host, a aba **Limpeza** (journal/apt/etc.) aponta para caminhos do container, não do
 > host — rode esses comandos direto no host. O scan de disco e a aba Docker funcionam normalmente.
 
+> **SSH no container**: a imagem inclui `openssh-client` e `sshpass`. Para os modos **Sistema** e
+> **Chave**, monte o diretório `~/.ssh` no container (ex.: `-v ~/.ssh:/home/node/.ssh:ro`) — o modo
+> Sistema passa a listar os apelidos do `config` automaticamente; no modo Chave use o caminho interno
+> (ex.: `/home/node/.ssh/id_ed25519`). As credenciais cifradas e o `master.key` ficam no volume `/data`.
+
 ## Abas
 
 ### Dashboard
@@ -124,6 +141,24 @@ root; use sabendo disso.
   retomar, parar (confirmado) e matar (SIGKILL).
 - **Logs** por container (tail 200/500/2000, modo seguir) e **inspeção** de detalhes.
 - **Imagens** (marca *dangling*), **uso de disco** (`docker system df`) e comandos de `prune` copiáveis.
+
+### SSH
+- Adicione **servidores remotos** e agrupe em **clusters**. Três modos de autenticação:
+  - **Sistema** — usa o `~/.ssh/config` do host do painel, o **ssh-agent** e as chaves padrão.
+    Nenhuma credencial é guardada; basta escolher o apelido do config (ou digitar host/porta).
+  - **Chave** — caminho de uma chave privada no host do painel (recomendado).
+  - **Senha** — armazenada cifrada (exige `sshpass` no host do painel).
+- Coleta **agente-less**: conecta por SSH e lê `/proc`, `df` e `/proc/net/dev` — **nada é instalado**
+  no alvo, e os comandos são somente leitura.
+- Cada servidor vira um **card** com **CPU**, **memória**, **disco** (partição principal) e **rede**
+  (download/upload), além de hostname, kernel, carga e uptime. *Testar* a conexão pelo botão de raio.
+- **Logo (PNG) por cluster e por servidor**: envie a imagem no diálogo (PNG/JPG/WEBP/GIF, até 1,5 MB).
+  O card usa o logo do servidor e, se não houver, o do cluster; sem logo, cai no ícone padrão. Os
+  arquivos ficam em `data/logos/` e são servidos por rota autenticada (`/api/ssh/logo/…`), sem inflar
+  as respostas do polling.
+- Nos modos **Chave** e **Senha**, as credenciais ficam **cifradas** no SQLite (AES-256-GCM) com a chave mestra local. A senha SSH exige
+  `sshpass` no host do painel; **chave privada (ou o modo Sistema) é o método recomendado**. O modo
+  **Sistema** reaproveita o `~/.ssh/config`/agent e **não grava segredo nenhum** no banco.
 
 ### Disco
 - Mede cada pasta com `du -x -s -B1` (espaço **real alocado**, sem cruzar filesystems).
@@ -176,6 +211,16 @@ Todas as rotas `/api/*` exigem sessão válida, **exceto** `health` e as de aute
 | POST | `/api/kill` | `{ pid, signal }` → envia sinal (TERM/KILL/STOP/CONT/…) |
 | GET | `/api/clean/tasks` | Tarefas + tamanho liberável + swapfiles órfãos |
 | POST | `/api/clean/run` | `{ id, paths? }` → executa a tarefa (whitelist) |
+| GET | `/api/ssh/overview` | Clusters + servidores + último snapshot (CPU/memória/disco/rede) |
+| GET | `/api/ssh/config` | Apelidos do `~/.ssh/config` disponíveis (modo Sistema) |
+| GET | `/api/ssh/logo/<arquivo>` | Logo (PNG/JPG/WEBP/GIF) de um cluster/servidor (autenticado) |
+| POST | `/api/ssh/clusters` | `{ name, logo? }` → cria cluster |
+| POST | `/api/ssh/clusters/update` | `{ id, name?, logo? }` → renomeia e/ou troca o logo |
+| POST | `/api/ssh/clusters/delete` | `{ id }` → remove cluster (servidores viram "Sem cluster") |
+| POST | `/api/ssh/servers` | `{ name, host, port, username, authType, secret, clusterId, logo? }` (`authType`: key/password/system) |
+| POST | `/api/ssh/servers/update` | Igual ao anterior + `id` (credencial/logo vazios mantêm os atuais) |
+| POST | `/api/ssh/servers/delete` | `{ id }` |
+| POST | `/api/ssh/servers/test` | `{ id }` → testa a conexão e retorna hostname/kernel |
 
 ## Estrutura
 
@@ -183,20 +228,23 @@ Todas as rotas `/api/*` exigem sessão válida, **exceto** `health` e as de aute
 server/
   index.js      # servidor HTTP, rotas e gate de autenticação
   config.js     # variáveis de ambiente e caminhos
-  db.js         # SQLite (node:sqlite): usuários e sessões
+  db.js         # SQLite (node:sqlite): usuários, sessões, clusters e servidores SSH
   auth.js       # scrypt, sessões, cookies, rate limit
+  secrets.js    # chave mestra local + AES-256-GCM (credenciais SSH)
   disk.js       # scan com du + SSE + cache (respeita SCAN_ROOT)
   system.js     # amostragem de /proc: CPU, memória, rede, histórico
   network.js    # /proc/net/dev, interfaces, TCP e latência
   docker.js     # CLI do Docker: containers, stats, logs, ações
+  ssh.js        # coleta agente-less (ssh: sistema/chave/senha) + leitura do ~/.ssh/config + cache
+  logos.js      # upload/remoção/leitura dos logos (PNG/JPG/WEBP/GIF) em data/logos/
   clean.js      # tarefas de limpeza em whitelist
 src/
   App.tsx                # gate de login + layout e abas
-  components/            # Dashboard, RedePanel, DockerPanel, Disco, Processos, Memória, Limpeza
+  components/            # Dashboard, Rede, Docker, SSH, Disco, Processos, Memória, Limpeza
   components/LoginScreen.tsx
   lib/                   # api, format, usePoll
 public/                  # logos (mark + wordmark) e favicon
-data/                    # SQLite (criado no 1º uso, fora do git)
+data/                    # SQLite + master.key + logos/ (criados no 1º uso, fora do git)
 ```
 
 ## Identidade visual

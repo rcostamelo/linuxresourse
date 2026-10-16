@@ -11,6 +11,7 @@ import {
   LogOut,
   MemoryStick,
   Network,
+  Server,
   ShieldCheck,
   User,
 } from 'lucide-react'
@@ -37,6 +38,7 @@ import { ProcessManager } from '@/components/ProcessManager'
 import { MemoryPanel } from '@/components/MemoryPanel'
 import { RedePanel } from '@/components/RedePanel'
 import { DockerPanel } from '@/components/DockerPanel'
+import { SshPanel } from '@/components/SshPanel'
 import { CleanupPanel } from '@/components/CleanupPanel'
 import { LoginScreen } from '@/components/LoginScreen'
 import { api, UNAUTHORIZED_EVENT } from '@/lib/api'
@@ -247,6 +249,9 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
             <TabsTrigger value="docker">
               <Boxes className="size-4" /> Docker
             </TabsTrigger>
+            <TabsTrigger value="ssh">
+              <Server className="size-4" /> SSH
+            </TabsTrigger>
             <TabsTrigger value="disco">
               <HardDrive className="size-4" /> Disco
             </TabsTrigger>
@@ -269,6 +274,9 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
           </TabsContent>
           <TabsContent value="docker">
             <DockerPanel />
+          </TabsContent>
+          <TabsContent value="ssh">
+            <SshPanel />
           </TabsContent>
           <TabsContent value="disco">
             <DiskExplorer />

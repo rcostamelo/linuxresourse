@@ -15,7 +15,10 @@ import {
   runAction,
 } from './docker.js';
 import { DIST, PORT, HOST, DB_FILE } from './config.js';
-import { initDb } from './db.js';
+import { initDb, listClusters, findClusterByName, getClusterRaw, createCluster, updateCluster, deleteCluster, listServersRaw, getServerRaw, createServer as insertServer, updateServer, deleteServer, publicServer } from './db.js';
+import { encryptSecret } from './secrets.js';
+import { saveLogo, removeLogo, logoFile } from './logos.js';
+import * as ssh from './ssh.js';
 import * as auth from './auth.js';
 
 const MIME = {
@@ -54,15 +57,33 @@ function readBody(req, limit = 1e6) {
   });
 }
 
-async function readJson(req) {
+async function readJson(req, limit = 1e6) {
   const type = String(req.headers['content-type'] || '');
   if (!type.includes('application/json')) throw auth.httpError(415, 'envie Content-Type: application/json');
-  const raw = await readBody(req);
+  const raw = await readBody(req, limit);
   try {
     return raw ? JSON.parse(raw) : {};
   } catch {
     throw auth.httpError(400, 'JSON inválido');
   }
+}
+
+const LOGO_LIMIT = 2_500_000;
+
+function applyLogo(value, current) {
+  if (value === undefined) return current ?? null;
+  if (value === null || value === '') {
+    removeLogo(current);
+    return null;
+  }
+  let name;
+  try {
+    name = saveLogo(value);
+  } catch (e) {
+    throw auth.httpError(400, e.message);
+  }
+  if (name !== current) removeLogo(current);
+  return name;
 }
 
 function serveStatic(req, res, pathname) {
@@ -137,6 +158,42 @@ const PUBLIC_API = new Set([
   '/api/auth/login',
   '/api/auth/logout',
 ]);
+
+function sshTarget(row) {
+  return {
+    id: row.id,
+    host: row.host,
+    port: row.port,
+    username: row.username,
+    authType: row.auth_type,
+    secretEnc: row.secret_enc,
+  };
+}
+
+function clusterIdOrNull(value) {
+  if (value == null || value === '') return null;
+  const id = Number(value);
+  if (!Number.isInteger(id) || !listClusters().some((c) => c.id === id)) throw auth.httpError(400, 'cluster inválido');
+  return id;
+}
+
+async function sshOverview() {
+  const raws = listServersRaw();
+  const snaps = await ssh.collectAll(raws.map(sshTarget));
+  const byId = new Map(snaps.map((s) => [s.id, s]));
+
+  const clusters = listClusters().map((c) => ({ id: c.id, name: c.name, logo: c.logo ?? null, servers: [] }));
+  const byCluster = new Map(clusters.map((c) => [c.id, c]));
+  const ungrouped = { id: null, name: 'Sem cluster', logo: null, servers: [] };
+
+  for (const row of raws) {
+    const server = { ...publicServer(row), metrics: byId.get(row.id) ?? null };
+    const bucket = row.cluster_id != null ? byCluster.get(row.cluster_id) : ungrouped;
+    (bucket ?? ungrouped).servers.push(server);
+  }
+  if (ungrouped.servers.length) clusters.push(ungrouped);
+  return { ts: Date.now(), clusters };
+}
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || HOST}`);
@@ -239,6 +296,110 @@ const server = createServer(async (req, res) => {
       } catch (err) {
         return json(res, 400, { ok: false, error: String(err.message || err) });
       }
+    }
+
+    if (p === '/api/ssh/overview') return json(res, 200, await sshOverview());
+    if (p === '/api/ssh/config') return json(res, 200, ssh.readSshConfig());
+
+    if (p.startsWith('/api/ssh/logo/') && req.method === 'GET') {
+      const name = decodeURIComponent(p.slice('/api/ssh/logo/'.length));
+      const f = logoFile(name);
+      if (!f) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end('not found');
+      }
+      res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'public, max-age=31536000, immutable' });
+      return createReadStream(f.full).pipe(res);
+    }
+
+    if (p === '/api/ssh/clusters' && req.method === 'POST') {
+      const body = await readJson(req, LOGO_LIMIT);
+      const name = String(body.name ?? '').trim();
+      if (name.length < 1 || name.length > 60) return json(res, 400, { error: 'o nome do cluster precisa ter de 1 a 60 caracteres' });
+      if (findClusterByName(name)) return json(res, 409, { error: 'já existe um cluster com esse nome' });
+      const logo = applyLogo(body.logo, null);
+      return json(res, 201, { ok: true, cluster: createCluster(name, logo) });
+    }
+
+    if (p === '/api/ssh/clusters/update' && req.method === 'POST') {
+      const body = await readJson(req, LOGO_LIMIT);
+      const id = Number(body.id);
+      const current = getClusterRaw(id);
+      if (!current) return json(res, 404, { error: 'cluster não encontrado' });
+      let name = current.name;
+      if (body.name !== undefined) {
+        name = String(body.name).trim();
+        if (name.length < 1 || name.length > 60) return json(res, 400, { error: 'o nome do cluster precisa ter de 1 a 60 caracteres' });
+        const dup = findClusterByName(name);
+        if (dup && dup.id !== id) return json(res, 409, { error: 'já existe um cluster com esse nome' });
+      }
+      const logo = applyLogo(body.logo, current.logo);
+      return json(res, 200, { ok: true, cluster: updateCluster(id, { name, logo }) });
+    }
+
+    if (p === '/api/ssh/clusters/delete' && req.method === 'POST') {
+      const body = await readJson(req);
+      const id = Number(body.id);
+      const current = getClusterRaw(id);
+      const changed = deleteCluster(id);
+      if (changed) removeLogo(current?.logo);
+      return json(res, changed ? 200 : 404, changed ? { ok: true } : { error: 'cluster não encontrado' });
+    }
+
+    if (p === '/api/ssh/servers' && req.method === 'POST') {
+      const body = await readJson(req, LOGO_LIMIT);
+      const v = ssh.validateServer(body, { requireSecret: true });
+      if (v.error) return json(res, 400, { error: v.error });
+      const clusterId = clusterIdOrNull(body.clusterId);
+      const secretEnc = v.value.authType === 'system' ? null : encryptSecret(v.value.secret);
+      const logo = applyLogo(body.logo, null);
+      const created = insertServer({ ...v.value, clusterId, secretEnc, logo });
+      return json(res, 201, { ok: true, server: created });
+    }
+
+    if (p === '/api/ssh/servers/update' && req.method === 'POST') {
+      const body = await readJson(req, LOGO_LIMIT);
+      const current = getServerRaw(Number(body.id));
+      if (!current) return json(res, 404, { error: 'servidor não encontrado' });
+      const authType = body.authType === 'password' ? 'password' : body.authType === 'system' ? 'system' : 'key';
+      const hasNewSecret = body.secret != null && String(body.secret).trim() !== '';
+      const needsSecret = authType !== 'system' && (!current.secret_enc || authType !== current.auth_type);
+      const v = ssh.validateServer(body, { requireSecret: needsSecret && !hasNewSecret });
+      if (v.error) return json(res, 400, { error: v.error });
+      const clusterId = clusterIdOrNull(body.clusterId);
+      let secretEnc;
+      if (authType === 'system') secretEnc = null;
+      else if (hasNewSecret) secretEnc = encryptSecret(v.value.secret);
+      else secretEnc = undefined;
+      const logo = applyLogo(body.logo, current.logo);
+      ssh.invalidateServer(current.id);
+      const updated = updateServer(current.id, { ...v.value, clusterId, secretEnc, logo });
+      return json(res, 200, { ok: true, server: updated });
+    }
+
+    if (p === '/api/ssh/servers/delete' && req.method === 'POST') {
+      const body = await readJson(req);
+      const id = Number(body.id);
+      const current = getServerRaw(id);
+      ssh.invalidateServer(id);
+      const changed = deleteServer(id);
+      if (changed) removeLogo(current?.logo);
+      return json(res, changed ? 200 : 404, changed ? { ok: true } : { error: 'servidor não encontrado' });
+    }
+
+    if (p === '/api/ssh/servers/test' && req.method === 'POST') {
+      const body = await readJson(req);
+      const current = getServerRaw(Number(body.id));
+      if (!current) return json(res, 404, { error: 'servidor não encontrado' });
+      const snap = await ssh.collectServer(sshTarget(current), { force: true });
+      return json(res, 200, {
+        ok: !!snap.online,
+        online: !!snap.online,
+        error: snap.error ?? null,
+        hostname: snap.hostname ?? null,
+        uname: snap.uname ?? null,
+        latencyMs: snap.collectMs ?? null,
+      });
     }
 
     if (p.startsWith('/api/')) return json(res, 404, { error: 'not found' });
