@@ -1,0 +1,25 @@
+# Linux Resource — execução isolada (vê o disco/rede/processos do próprio container)
+services:
+  linux-resource:
+    build: .
+    image: linux-resource:latest
+    container_name: linux-resource
+    ports:
+      - "${PORT:-10450}:10450"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "10450"
+      DATA_DIR: /data
+      TZ: ${TZ:-America/Sao_Paulo}
+      DOCKER_GID: ${DOCKER_GID:-999}
+    volumes:
+      - lr-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Acesso ao docker.sock sem rodar como root.
+    # Descubra o GID com: stat -c '%g' /var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-999}"
+    restart: unless-stopped
+
+volumes:
+  lr-data:

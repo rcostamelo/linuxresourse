@@ -1,0 +1,30 @@
+# Linux Resource — modo host: enxerga o host de verdade (processos, disco, rede, containers)
+#
+#   docker compose -f docker-compose.host.yml up -d --build
+#
+# Requer Linux. O container usa o namespace de PID e a rede do host e monta o
+# filesystem em /host (somente leitura) para o scan de disco.
+services:
+  linux-resource:
+    build: .
+    image: linux-resource:latest
+    container_name: linux-resource-host
+    # network_mode: host ignora a seção "ports"
+    network_mode: host
+    pid: host
+    # root para poder sinalizar/encerrar processos do host
+    user: "0:0"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "10450"
+      DATA_DIR: /data
+      SCAN_ROOT: /host
+      TZ: ${TZ:-America/Sao_Paulo}
+    volumes:
+      - lr-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /:/host:ro
+    restart: unless-stopped
+
+volumes:
+  lr-data:
