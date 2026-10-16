@@ -1,6 +1,7 @@
-import { promises as fsp } from 'node:fs';
+import { promises as fsp, readFileSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import { readNetDev } from './network.js';
+import { SCAN_ROOT } from './config.js';
 
 const PAGE_SIZE = 4096;
 const HZ = 100;
@@ -21,7 +22,8 @@ let timer = null;
 async function loadUsers() {
   if (users.size && Date.now() - usersTs < 60_000) return;
   try {
-    const txt = await fsp.readFile('/etc/passwd', 'utf8');
+    const passwdFile = SCAN_ROOT && existsSync(`${SCAN_ROOT}/etc/passwd`) ? `${SCAN_ROOT}/etc/passwd` : '/etc/passwd';
+    const txt = await fsp.readFile(passwdFile, 'utf8');
     const m = new Map();
     for (const line of txt.split('\n')) {
       const p = line.split(':');
@@ -103,7 +105,7 @@ async function readProcess(pidRaw, dtTotal, ncpu, memTotal, uptimeSec) {
 
   let uid = 0;
   try {
-    const s = await fsp.readFile(`/proc/${pid}/status`, 'utf8');
+    const s = await fsp.readFile(`/proc/${pidNum}/status`, 'utf8');
     const mm = s.match(/^Uid:\s+(\d+)/m);
     if (mm) uid = Number(mm[1]);
   } catch {
@@ -112,7 +114,7 @@ async function readProcess(pidRaw, dtTotal, ncpu, memTotal, uptimeSec) {
 
   let cmdline = '';
   try {
-    cmdline = (await fsp.readFile(`/proc/${pid}/cmdline`, 'utf8')).replace(/\0/g, ' ').trim();
+    cmdline = (await fsp.readFile(`/proc/${pidNum}/cmdline`, 'utf8')).replace(/\0/g, ' ').trim();
   } catch {
     /* ignore */
   }
@@ -185,8 +187,8 @@ async function sample() {
     const dt = Math.max(0.001, (now - prevNetTs) / 1000);
     for (const [name, cur] of Object.entries(dev)) {
       const p = prevNet[name] || { rx: cur.rx, tx: cur.tx };
-      const rx = Math.max(0, (cur.rx - p.rx) / dt);
-      const tx = Math.max(0, (cur.tx - p.tx) / dt);
+      const rx = Math.round(Math.max(0, (cur.rx - p.rx) / dt));
+      const tx = Math.round(Math.max(0, (cur.tx - p.tx) / dt));
       perIface[name] = { rx, tx, rxTotal: cur.rx, txTotal: cur.tx, rxErrs: cur.rxErrs, txErrs: cur.txErrs };
       if (name !== 'lo') {
         totalRx += rx;
@@ -242,10 +244,22 @@ export function getProcesses() {
   };
 }
 
+function readHostHostname() {
+  if (SCAN_ROOT && existsSync(`${SCAN_ROOT}/etc/hostname`)) {
+    try {
+      const h = readFileSync(`${SCAN_ROOT}/etc/hostname`, 'utf8').trim();
+      if (h) return h;
+    } catch {
+      /* ignore */
+    }
+  }
+  return os.hostname();
+}
+
 export function getSystem() {
   const cpus = os.cpus();
   return {
-    hostname: os.hostname(),
+    hostname: readHostHostname(),
     platform: `${os.type()} ${os.release()}`,
     arch: os.arch(),
     uptime: os.uptime(),

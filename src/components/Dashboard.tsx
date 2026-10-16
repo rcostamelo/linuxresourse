@@ -10,7 +10,7 @@ import {
   Network,
   Radio,
   Zap,
-} from 'lucide-react'
+} from '@/components/ui/lucide-animated'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -79,7 +79,7 @@ export function Dashboard() {
   const { data: history } = usePoll(api.history, 2000)
   const { data: procs } = usePoll(api.processes, 2000)
   const { data: net } = usePoll(api.network, 4000)
-  const { data: fsData } = usePoll(() => api.fs('/'), 15000)
+  const { data: disksData } = usePoll(api.disks, 15000)
   const [showVirtual, setShowVirtual] = useState(false)
 
   const sys = metrics?.system
@@ -92,7 +92,9 @@ export function Dashboard() {
   }, [history])
 
   const memPct = mem ? (mem.used / mem.total) * 100 : 0
-  const diskPct = fsData?.fs ? (fsData.fs.used / fsData.fs.total) * 100 : 0
+  const diskSummary = disksData?.summary
+  const diskMounts = disksData?.mounts ?? []
+  const diskPct = diskSummary?.usedPct ?? 0
 
   const topCpu = useMemo(() => [...(procs?.processes ?? [])].sort((a, b) => b.cpu - a.cpu).slice(0, 6), [procs])
   const topMem = useMemo(() => [...(procs?.processes ?? [])].sort((a, b) => b.mem - a.mem).slice(0, 6), [procs])
@@ -123,12 +125,18 @@ export function Dashboard() {
           hint={mem ? `${formatBytes(mem.used, 1)} de ${formatBytes(mem.total, 1)} · swap ${formatBytes(mem.swapUsed, 1)}` : '—'}
         />
         <GaugeCard
-          title="Disco /"
+          title={diskMounts.length > 1 ? `Discos (${diskMounts.length})` : 'Disco /'}
           icon={<HardDrive className="size-3.5" />}
           value={diskPct}
           color={C.disk}
-          sub={fsData?.fs ? formatBytes(fsData.fs.used, 1) : ''}
-          hint={fsData?.fs ? `${formatBytes(fsData.fs.free, 1)} livres de ${formatBytes(fsData.fs.total, 1)}` : '—'}
+          sub={diskSummary ? formatBytes(diskSummary.used, 1) : ''}
+          hint={
+            diskSummary
+              ? `${formatBytes(diskSummary.free, 1)} livres de ${formatBytes(diskSummary.total, 1)}${
+                  diskMounts.length > 1 ? ` · ${diskMounts.map((m) => `${m.name} (${m.usedPct.toFixed(0)}%)`).join(' + ')}` : ''
+                }`
+              : '—'
+          }
         />
         <Card className="gap-2 overflow-hidden py-4">
           <div className="flex items-center justify-between px-4">

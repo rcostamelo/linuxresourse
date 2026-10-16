@@ -40,12 +40,19 @@ export function Gauge({
 
   return (
     <div className="relative grid place-items-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-[135deg]">
+      <svg width={size} height={size} className="-rotate-[135deg] overflow-visible">
         <defs>
           <linearGradient id={`g-${id}`} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor={col} stopOpacity="0.7" />
+            <stop offset="0%" stopColor={col} stopOpacity="0.65" />
             <stop offset="100%" stopColor={col} />
           </linearGradient>
+          <filter id={`glow-${id}`} x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="2.5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
         </defs>
         <circle
           cx={size / 2}
@@ -53,7 +60,7 @@ export function Gauge({
           r={r}
           fill="none"
           stroke="currentColor"
-          className="text-muted/40"
+          className="text-muted/45"
           strokeWidth={thickness}
           strokeLinecap="round"
           strokeDasharray={`${c * sweep} ${c}`}
@@ -67,15 +74,16 @@ export function Gauge({
           strokeWidth={thickness}
           strokeLinecap="round"
           strokeDasharray={`${c * sweep * pct} ${c}`}
+          filter={`url(#glow-${id})`}
           style={{ transition: 'stroke-dasharray .5s ease' }}
         />
       </svg>
       <div className="absolute flex flex-col items-center">
-        <span className="text-2xl font-semibold tabular-nums">
+        <span className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
           {value.toFixed(decimals)}
           <span className="ml-0.5 text-sm text-muted-foreground">{unit}</span>
         </span>
-        {label && <span className="text-xs font-medium text-muted-foreground">{label}</span>}
+        {label && <span className="font-mono text-xs font-medium text-muted-foreground">{label}</span>}
         {sub && <span className="text-[10px] text-muted-foreground">{sub}</span>}
       </div>
     </div>
@@ -122,7 +130,7 @@ export function AreaSeries({
         <defs>
           {series.map((s, i) => (
             <linearGradient key={i} id={`a-${id}-${i}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={s.color} stopOpacity="0.35" />
+              <stop offset="0%" stopColor={s.color} stopOpacity="0.38" />
               <stop offset="100%" stopColor={s.color} stopOpacity="0" />
             </linearGradient>
           ))}
@@ -136,7 +144,7 @@ export function AreaSeries({
               y1={H * f}
               y2={H * f}
               stroke="currentColor"
-              className="text-border"
+              className="text-cyan-400/15"
               strokeWidth="1"
               vectorEffect="non-scaling-stroke"
               strokeDasharray="4 6"
@@ -156,6 +164,7 @@ export function AreaSeries({
                   vectorEffect="non-scaling-stroke"
                   strokeLinejoin="round"
                   strokeLinecap="round"
+                  style={{ filter: `drop-shadow(0 0 6px ${s.color}66)` }}
                 />
               )}
             </g>
@@ -163,7 +172,7 @@ export function AreaSeries({
         })}
       </svg>
       {n === 0 && (
-        <div className="-mt-[90px] text-center text-xs text-muted-foreground">coletando dados…</div>
+        <div className="-mt-[90px] text-center font-mono text-xs text-muted-foreground">coletando dados…</div>
       )}
     </div>
   )
@@ -194,6 +203,7 @@ export function Sparkline({ data, color, height = 34 }: { data: number[]; color:
           strokeWidth="2"
           vectorEffect="non-scaling-stroke"
           strokeLinejoin="round"
+          style={{ filter: `drop-shadow(0 0 4px ${color}66)` }}
         />
       )}
     </svg>

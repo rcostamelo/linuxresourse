@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, Cpu, MemoryStick, Activity, Skull, Search, TriangleAlert } from 'lucide-react'
+import { ArrowDown, ArrowUp, Cpu, MemoryStick, Activity, Skull, Search, TriangleAlert } from '@/components/ui/lucide-animated'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'

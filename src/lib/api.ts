@@ -13,6 +13,65 @@ export interface FsInfo {
   used: number
 }
 
+export interface DiskMount {
+  device: string
+  name: string
+  diskName: string
+  model: string
+  kind: 'NVMe' | 'SSD' | 'HDD' | 'Disco' | string
+  fstype: string
+  mount: string
+  label: string
+  total: number
+  used: number
+  free: number
+  usedPct: number
+  mounted: boolean
+}
+
+export interface DiskPartition {
+  name: string
+  device: string
+  size: number
+  mounted: boolean
+  mount: string | null
+  label: string
+  fstype: string | null
+  total: number
+  used: number
+  free: number
+  usedPct: number
+}
+
+export interface PhysicalDisk {
+  name: string
+  device: string
+  model: string
+  kind: 'NVMe' | 'SSD' | 'HDD' | 'Disco' | string
+  rawSize: number
+  mounted: boolean
+  total: number
+  used: number
+  free: number
+  usedPct: number
+  partitions: DiskPartition[]
+}
+
+export interface DisksResponse {
+  ts: number
+  summary: {
+    total: number
+    used: number
+    free: number
+    usedPct: number
+    mountedCount: number
+    physicalCount: number
+    rawPhysicalTotal: number
+  }
+  mounts: DiskMount[]
+  physicalDisks: PhysicalDisk[]
+}
+
 export interface ProcInfo {
   pid: number
   ppid: number
@@ -464,6 +523,7 @@ export const api = {
   processes: () => getJson<ProcessesResponse>('/api/processes'),
   memory: () => getJson<MemoryInfo>('/api/memory'),
   fs: (path = '/') => getJson<{ path: string; fs: FsInfo }>(`/api/fs?path=${encodeURIComponent(path)}`),
+  disks: () => getJson<DisksResponse>('/api/disks'),
   network: () => getJson<NetworkResponse>('/api/network'),
   metrics: () => getJson<MetricsResponse>('/api/metrics'),
   history: () => getJson<HistoryResponse>('/api/history'),

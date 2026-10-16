@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Cpu, HardDrive, Layers, MemoryStick, RefreshCw } from 'lucide-react'
+import { Cpu, HardDrive, Layers, MemoryStick, RefreshCw } from '@/components/ui/lucide-animated'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'

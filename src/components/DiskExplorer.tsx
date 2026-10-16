@@ -3,29 +3,43 @@ import {
   Check,
   ChevronRight,
   Copy,
+  Database,
+  Disc,
   File as FileIcon,
   Folder,
   HardDrive,
   Home,
+  Layers,
   Link2,
   RefreshCw,
   Search,
-} from 'lucide-react'
+} from '@/components/ui/lucide-animated'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import { Card, CardContent } from '@/components/ui/card'
 import { StatCard } from '@/components/StatCard'
 import { formatBytes, formatPct } from '@/lib/format'
-import type { DiskItem, FsInfo } from '@/lib/api'
+import { api } from '@/lib/api'
+import type { DiskItem, DiskMount, FsInfo } from '@/lib/api'
+import { usePoll } from '@/lib/usePoll'
 import { cn } from '@/lib/utils'
+
+const DISK_COLORS = [
+  { bar: 'bg-cyan-400', text: 'text-cyan-300', dot: '#22d3ee', ring: 'ring-cyan-400/40' },
+  { bar: 'bg-emerald-400', text: 'text-emerald-300', dot: '#34d399', ring: 'ring-emerald-400/40' },
+  { bar: 'bg-violet-400', text: 'text-violet-300', dot: '#a78bfa', ring: 'ring-violet-400/40' },
+  { bar: 'bg-amber-400', text: 'text-amber-300', dot: '#fbbf24', ring: 'ring-amber-400/40' },
+  { bar: 'bg-fuchsia-400', text: 'text-fuchsia-300', dot: '#e879f9', ring: 'ring-fuchsia-400/40' },
+]
 
 function colorFor(name: string, isDir: boolean) {
   let h = 0
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360
-  return isDir ? `hsl(${(h * 0.35 + 205) % 360} 58% 44%)` : `hsl(${(h * 0.45 + 30) % 360} 60% 47%)`
+  return isDir ? `hsl(${(h * 0.35 + 195) % 360} 62% 42%)` : `hsl(${(h * 0.45 + 30) % 360} 64% 46%)`
 }
 
 function squarify(items: DiskItem[], x: number, y: number, w: number, h: number) {
@@ -126,9 +140,9 @@ function Treemap({ items, onOpen }: { items: DiskItem[]; onOpen: (p: string) => 
   }, [items, size])
 
   return (
-    <div ref={ref} className="relative h-[min(64vh,620px)] w-full overflow-hidden rounded-lg bg-muted/30">
+    <div ref={ref} className="relative h-[min(64vh,620px)] w-full overflow-hidden rounded-lg border border-cyan-500/15 bg-muted/30">
       {rects.length === 0 ? (
-        <div className="grid h-full place-items-center text-sm text-muted-foreground">Sem dados.</div>
+        <div className="grid h-full place-items-center font-mono text-sm text-muted-foreground">Sem dados.</div>
       ) : (
         <svg width={size.w} height={size.h} className="block">
           {rects.map((r, idx) => {
@@ -162,7 +176,7 @@ function Treemap({ items, onOpen }: { items: DiskItem[]; onOpen: (p: string) => 
                   </text>
                 )}
                 {showLabel && showSize && (
-                  <text x={r.x + 7} y={r.y + 31} className="pointer-events-none fill-white/75 text-[10px]">
+                  <text x={r.x + 7} y={r.y + 31} className="pointer-events-none fill-white/75 font-mono text-[10px]">
                     {formatBytes(it.size)}
                   </text>
                 )}
@@ -173,10 +187,10 @@ function Treemap({ items, onOpen }: { items: DiskItem[]; onOpen: (p: string) => 
       )}
       {hover && (
         <div
-          className="pointer-events-none fixed z-50 max-w-[360px] rounded-lg border bg-popover px-2.5 py-1.5 text-xs shadow-xl"
+          className="pointer-events-none fixed z-50 max-w-[360px] rounded-lg border border-cyan-500/25 bg-popover/95 px-2.5 py-1.5 text-xs shadow-xl backdrop-blur-md"
           style={{ left: Math.min(hover.x + 14, window.innerWidth - 370), top: hover.y + 14 }}
         >
-          <div className="break-all font-mono">{hover.it.path}</div>
+          <div className="break-all font-mono text-cyan-200">{hover.it.path}</div>
           <div className="mt-0.5 text-muted-foreground">
             {hover.it.isDir ? 'Diretório' : 'Arquivo'} · {formatBytes(hover.it.size)}
             {hover.it.isDir ? ' · clique para explorar' : ''}
@@ -188,6 +202,17 @@ function Treemap({ items, onOpen }: { items: DiskItem[]; onOpen: (p: string) => 
   )
 }
 
+function findActiveMount(currentPath: string, mounts: DiskMount[]): string {
+  let best = '/'
+  for (const m of mounts) {
+    if (m.mount === '/') continue
+    if (currentPath === m.mount || currentPath.startsWith(m.mount + '/')) {
+      if (m.mount.length > best.length) best = m.mount
+    }
+  }
+  return best
+}
+
 export function DiskExplorer() {
   const [path, setPath] = useState('/')
   const [input, setInput] = useState('/')
@@ -197,6 +222,8 @@ export function DiskExplorer() {
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState('')
   const [copied, setCopied] = useState<string | null>(null)
+
+  const { data: disksData } = usePoll(api.disks, 10000)
 
   const buf = useRef<DiskItem[]>([])
   const raf = useRef<number | undefined>(undefined)
@@ -250,6 +277,15 @@ export function DiskExplorer() {
   const fileCount = items.length - dirCount
   const maxSize = sorted[0]?.size || 1
 
+  const mounts = disksData?.mounts ?? []
+  const summary = disksData?.summary
+  const unmountedDisks = useMemo(
+    () => (disksData?.physicalDisks ?? []).filter((d) => !d.mounted),
+    [disksData],
+  )
+  const activeMount = useMemo(() => findActiveMount(path, mounts), [path, mounts])
+  const activeDisk = useMemo(() => mounts.find((m) => m.mount === activeMount), [mounts, activeMount])
+
   const crumbs = useMemo(() => {
     const segs = path.split('/').filter(Boolean)
     const acc: { label: string; target: string }[] = [{ label: '/', target: '/' }]
@@ -270,6 +306,204 @@ export function DiskExplorer() {
 
   return (
     <div className="space-y-4">
+      {/* Totalização Global + Seletor de Discos */}
+      {summary && mounts.length > 0 && (
+        <Card className="py-4">
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="grid size-9 place-items-center rounded-lg bg-cyan-500/10 text-cyan-400 ring-1 ring-cyan-400/25">
+                  <Database className="size-4.5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-semibold tracking-tight">Pool de Armazenamento</h2>
+                    <Badge variant="outline" className="border-cyan-500/30 bg-cyan-500/10 font-mono text-[10px] text-cyan-300">
+                      {summary.mountedCount} {summary.mountedCount === 1 ? 'volume montado' : 'volumes montados'}
+                    </Badge>
+                    {summary.physicalCount > summary.mountedCount && (
+                      <Badge variant="outline" className="font-mono text-[10px] text-muted-foreground">
+                        {summary.physicalCount} discos físicos ({formatBytes(summary.rawPhysicalTotal, 1)} brutos)
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    Total montado: <span className="font-semibold text-foreground">{formatBytes(summary.used, 1)}</span> usados de{' '}
+                    <span className="font-semibold text-foreground">{formatBytes(summary.total, 1)}</span> ·{' '}
+                    <span className="text-emerald-400">{formatBytes(summary.free, 1)} livres</span> ({summary.usedPct.toFixed(1)}%)
+                  </p>
+                </div>
+              </div>
+
+              {activeDisk && (
+                <div className="flex items-center gap-2 rounded-lg border border-cyan-500/20 bg-cyan-950/20 px-3 py-1.5 font-mono text-xs">
+                  <Layers className="size-3.5 text-cyan-400" />
+                  <span className="text-muted-foreground">Explorando:</span>
+                  <span className="font-semibold text-cyan-300">{activeDisk.label}</span>
+                  <span className="text-muted-foreground">({activeDisk.device})</span>
+                </div>
+              )}
+            </div>
+
+            {/* Barra proporcional de divisão do Pool */}
+            <div className="space-y-1.5">
+              <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-900/90 p-0.5 ring-1 ring-cyan-500/20">
+                {mounts.map((m, idx) => {
+                  const pal = DISK_COLORS[idx % DISK_COLORS.length]
+                  const shareOfPool = summary.total > 0 ? (m.total / summary.total) * 100 : 0
+                  const usedInMount = m.total > 0 ? (m.used / m.total) * 100 : 0
+                  return (
+                    <div
+                      key={m.device}
+                      style={{ width: `${shareOfPool}%` }}
+                      className="relative flex h-full items-center overflow-hidden border-r border-white/15 last:border-r-0"
+                      title={`${m.label} (${m.device}): ${formatBytes(m.used, 1)} usados de ${formatBytes(m.total, 1)} (${m.usedPct.toFixed(1)}%)`}
+                    >
+                      <div
+                        className={cn('h-full transition-all duration-500', pal.bar)}
+                        style={{ width: `${usedInMount}%` }}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 font-mono text-[11px]">
+                {mounts.map((m, idx) => {
+                  const pal = DISK_COLORS[idx % DISK_COLORS.length]
+                  const sharePct = summary.total > 0 ? (m.total / summary.total) * 100 : 0
+                  return (
+                    <button
+                      key={m.device}
+                      type="button"
+                      onClick={() => setPath(m.mount)}
+                      className="flex items-center gap-1.5 text-left transition-opacity hover:opacity-80"
+                    >
+                      <span className="size-2 rounded-full" style={{ background: pal.dot }} />
+                      <span className={cn('font-semibold', pal.text)}>{m.name}</span>
+                      <span className="text-muted-foreground">
+                        ({m.mount}) · {formatBytes(m.used, 1)} / {formatBytes(m.total, 1)} · {sharePct.toFixed(0)}% do pool
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Cards clicáveis por unidade (montadas + desmontadas) */}
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {mounts.map((m, idx) => {
+                const pal = DISK_COLORS[idx % DISK_COLORS.length]
+                const isSelected = activeMount === m.mount
+                return (
+                  <button
+                    key={m.device}
+                    type="button"
+                    onClick={() => setPath(m.mount)}
+                    className={cn(
+                      'group relative flex flex-col justify-between gap-2.5 rounded-xl border p-3.5 text-left transition-all',
+                      isSelected
+                        ? 'border-cyan-400/50 bg-cyan-950/25 shadow-[0_0_20px_-6px_rgba(34,211,238,0.35)] ring-1 ring-cyan-400/30'
+                        : 'border-cyan-500/15 bg-card/50 hover:border-cyan-400/35 hover:bg-card/80',
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div
+                          className={cn(
+                            'grid size-8 shrink-0 place-items-center rounded-lg ring-1',
+                            isSelected
+                              ? 'bg-cyan-500/20 text-cyan-300 ring-cyan-400/40'
+                              : 'bg-muted/60 text-muted-foreground ring-white/10',
+                          )}
+                        >
+                          <HardDrive className="size-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate font-semibold text-foreground">{m.label}</span>
+                          </div>
+                          <div className="truncate font-mono text-[10px] text-muted-foreground">
+                            {m.model} · {m.device}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Badge variant="outline" className="h-4.5 px-1.5 font-mono text-[9px] uppercase">
+                          {m.kind}
+                        </Badge>
+                        <Badge variant="secondary" className="h-4.5 px-1.5 font-mono text-[9px] uppercase">
+                          {m.fstype}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-baseline justify-between font-mono text-xs">
+                        <span className={cn('font-semibold tabular-nums', pal.text)}>
+                          {formatBytes(m.used, 1)} <span className="font-normal text-muted-foreground">/ {formatBytes(m.total, 1)}</span>
+                        </span>
+                        <span className="text-[11px] font-semibold tabular-nums">{m.usedPct.toFixed(1)}%</span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-900/90 ring-1 ring-white/5">
+                        <div
+                          className={cn('h-full rounded-full transition-all duration-500', pal.bar)}
+                          style={{ width: `${Math.min(100, m.usedPct)}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between font-mono text-[10px] text-muted-foreground">
+                        <span className="truncate" title={m.mount}>
+                          mount: {m.mount}
+                        </span>
+                        <span className="shrink-0 text-emerald-400/90">{formatBytes(m.free, 1)} livre</span>
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+
+              {unmountedDisks.map((d) => (
+                <div
+                  key={d.device}
+                  className="flex flex-col justify-between gap-2.5 rounded-xl border border-dashed border-border/60 bg-card/25 p-3.5 opacity-75"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted/40 text-muted-foreground ring-1 ring-white/5">
+                        <Disc className="size-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate font-mono text-xs font-semibold text-foreground/90">{d.name}</div>
+                        <div className="truncate font-mono text-[10px] text-muted-foreground">
+                          {d.model} · {d.device}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Badge variant="outline" className="h-4.5 px-1.5 font-mono text-[9px] uppercase">
+                        {d.kind}
+                      </Badge>
+                      <Badge variant="outline" className="h-4.5 border-amber-500/30 bg-amber-500/10 px-1.5 font-mono text-[9px] text-amber-300">
+                        DESMONTADO
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 font-mono text-[11px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Capacidade física:</span>
+                      <span className="font-semibold text-foreground tabular-nums">{formatBytes(d.rawSize, 1)}</span>
+                    </div>
+                    <div className="truncate text-[10px] text-muted-foreground">
+                      Partições: {d.partitions.map((p) => `${p.name} (${formatBytes(p.size, 0)})`).join(', ')}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <form
         className="flex gap-2"
         onSubmit={(e) => {
@@ -328,7 +562,7 @@ export function DiskExplorer() {
           icon={<Folder className="size-4 text-sky-400" />}
         />
         <StatCard
-          label="Partição"
+          label={activeDisk ? `Unidade (${activeDisk.name})` : 'Partição'}
           value={fs ? formatBytes(fs.used, 1) : '—'}
           hint={fs ? `${formatBytes(fs.free, 1)} livre de ${formatBytes(fs.total, 1)}` : ''}
           icon={<HardDrive className="size-4 text-violet-400" />}
@@ -384,7 +618,7 @@ export function DiskExplorer() {
             <span className="text-right">Tamanho</span>
             <span className="text-right">%</span>
           </div>
-          <ScrollArea className="h-[min(64vh,620px)] rounded-lg border">
+          <ScrollArea className="h-[min(64vh,620px)] rounded-lg border border-cyan-500/15">
             {filtered.length === 0 ? (
               <div className="p-4 text-sm text-muted-foreground">
                 {loading ? 'Escaneando…' : 'Nada encontrado.'}
@@ -416,8 +650,8 @@ export function DiskExplorer() {
                       </Badge>
                     )}
                   </button>
-                  <span className="text-right text-xs font-semibold tabular-nums">{formatBytes(it.size)}</span>
-                  <span className="text-right text-xs text-muted-foreground tabular-nums">
+                  <span className="text-right font-mono text-xs font-semibold tabular-nums">{formatBytes(it.size)}</span>
+                  <span className="text-right font-mono text-xs text-muted-foreground tabular-nums">
                     {formatPct(it.size, total)}
                   </span>
                   <span
@@ -431,7 +665,7 @@ export function DiskExplorer() {
           </ScrollArea>
           <Separator className="my-2" />
           <p className="text-xs text-muted-foreground">
-            Mostrando os {filtered.length} maiores. Clique numa pasta para descer; use o breadcrumb para subir.
+            Mostrando os {filtered.length} maiores. Clique num disco acima para trocar de volume ou numa pasta para descer.
           </p>
         </div>
       </div>

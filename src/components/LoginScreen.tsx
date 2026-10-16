@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Eye, EyeOff, KeyRound, Loader2, LogIn, ShieldCheck, User, UserPlus } from 'lucide-react'
+import { Eye, EyeOff, KeyRound, Loader2, LogIn, ShieldCheck, User, UserPlus } from '@/components/ui/lucide-animated'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'

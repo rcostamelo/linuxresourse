@@ -11,10 +11,12 @@ import {
   LogOut,
   MemoryStick,
   Network,
+  Radio,
   Server,
   ShieldCheck,
+  Terminal,
   User,
-} from 'lucide-react'
+} from '@/components/ui/lucide-animated'
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -45,15 +47,72 @@ import { api, UNAUTHORIZED_EVENT } from '@/lib/api'
 import type { AuthUser } from '@/lib/api'
 import { usePoll } from '@/lib/usePoll'
 import { formatBytes, formatDuration } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
-function HeaderStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function HeaderStat({
+  icon,
+  label,
+  value,
+  progress,
+  barColor = 'bg-cyan-400',
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  progress?: number
+  barColor?: string
+}) {
+  const pct = progress !== undefined ? Math.max(0, Math.min(100, progress)) : undefined
+  const isCritical = pct !== undefined && pct >= 85
+  const isWarn = pct !== undefined && pct >= 65 && pct < 85
+
+  const dynamicBarColor = isCritical
+    ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.7)]'
+    : isWarn
+      ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]'
+      : barColor
+
   return (
-    <div className="flex items-center gap-2 rounded-lg border bg-card/60 px-3 py-1.5">
-      {icon}
-      <div className="leading-tight">
-        <div className="text-[10px] tracking-wide text-muted-foreground uppercase">{label}</div>
-        <div className="font-mono text-xs font-semibold tabular-nums">{value}</div>
+    <div
+      className={cn(
+        'relative flex min-w-[116px] flex-col justify-between gap-1.5 overflow-hidden rounded-lg border bg-card/75 px-3 py-1.5 backdrop-blur-md transition-colors',
+        isCritical ? 'border-rose-500/40 bg-rose-950/20' : 'border-cyan-500/15 hover:border-cyan-400/30',
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <div className="grid size-6 shrink-0 place-items-center rounded-md bg-cyan-500/10 ring-1 ring-cyan-400/20">
+          {icon}
+        </div>
+        <div className="min-w-0 flex-1 leading-tight">
+          <div className="flex items-center justify-between gap-1.5">
+            <span className="font-mono text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
+              {label}
+            </span>
+            {pct !== undefined && (
+              <span
+                className={cn(
+                  'font-mono text-[9px] tabular-nums',
+                  isCritical ? 'text-rose-400' : isWarn ? 'text-amber-300' : 'text-cyan-300/80',
+                )}
+              >
+                {pct.toFixed(0)}%
+              </span>
+            )}
+          </div>
+          <div className="truncate font-mono text-xs font-semibold tracking-tight text-foreground tabular-nums">
+            {value}
+          </div>
+        </div>
       </div>
+
+      {pct !== undefined && (
+        <div className="h-1 w-full overflow-hidden rounded-full bg-slate-900/90 ring-1 ring-white/5">
+          <div
+            className={cn('h-full rounded-full transition-all duration-500 ease-out', dynamicBarColor)}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -62,15 +121,18 @@ function Splash() {
   return (
     <div className="grid min-h-dvh place-items-center bg-background">
       <div className="flex flex-col items-center gap-4">
-        <img
-          src="/logo-mark.png"
-          alt="Linux Resource"
-          width={72}
-          height={72}
-          className="size-18"
-        />
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> carregando…
+        <div className="relative">
+          <div className="absolute -inset-3 rounded-full bg-cyan-500/20 blur-xl" />
+          <img
+            src="/logo-mark.png"
+            alt="Linux Resource"
+            width={72}
+            height={72}
+            className="relative size-18"
+          />
+        </div>
+        <div className="flex items-center gap-2 font-mono text-xs tracking-wider text-cyan-300/80 uppercase">
+          <Loader2 className="size-4 animate-spin text-cyan-400" /> inicializando telemetria…
         </div>
       </div>
     </div>
@@ -106,18 +168,18 @@ function UserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => void }) 
 
   return (
     <>
-      <div className="flex items-center gap-1 rounded-lg border bg-card/60 py-1 pr-1 pl-2">
-        <Badge variant="secondary" className="h-auto gap-1 border-transparent bg-transparent px-1 font-mono text-xs">
-          <User className="size-3.5 text-emerald-400" />
+      <div className="flex items-center gap-1 rounded-lg border border-cyan-500/15 bg-card/75 py-1 pr-1 pl-2 backdrop-blur-md">
+        <Badge variant="secondary" className="h-auto gap-1.5 border-transparent bg-transparent px-1 font-mono text-xs">
+          <User className="size-3.5 text-cyan-400" />
           {user.username}
         </Badge>
-        <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => setOpen(true)}>
+        <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs hover:bg-cyan-500/10 hover:text-cyan-200" onClick={() => setOpen(true)}>
           <KeyRound className="size-3.5" /> Senha
         </Button>
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-destructive"
+          className="h-7 gap-1.5 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
           onClick={onLogout}
         >
           <LogOut className="size-3.5" /> Sair
@@ -128,7 +190,7 @@ function UserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => void }) 
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <ShieldCheck className="size-4 text-emerald-400" /> Alterar senha
+              <ShieldCheck className="size-4 text-cyan-400" /> Alterar senha
             </AlertDialogTitle>
             <AlertDialogDescription>
               As demais sessões de <span className="font-mono">{user.username}</span> serão encerradas.
@@ -182,55 +244,81 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
 
   const cpu = sys?.cpuUsage ?? 0
   const memPct = mem ? (mem.used / mem.total) * 100 : 0
+  const loadPct = sys ? Math.min(100, ((sys.loadavg?.[0] ?? 0) / Math.max(1, sys.ncpu)) * 100) : 0
 
   return (
-    <div className="min-h-dvh bg-background">
-      <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur">
+    <div className="min-h-dvh bg-transparent">
+      <header className="sticky top-0 z-30 border-b border-cyan-500/15 bg-background/80 shadow-[0_4px_30px_rgba(0,0,0,0.45)] backdrop-blur-xl before:pointer-events-none before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-cyan-400/45 before:to-transparent">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <img
-              src="/logo-mark.png"
-              alt="Linux Resource"
-              width={44}
-              height={44}
-              className="size-11 shrink-0 object-cover"
-            />
+            <div className="relative">
+              <div className="absolute -inset-1 rounded-xl bg-cyan-500/15 blur-md" />
+              <img
+                src="/logo-mark.png"
+                alt="Linux Resource"
+                width={44}
+                height={44}
+                className="relative size-11 shrink-0 rounded-lg object-cover ring-1 ring-cyan-400/25"
+              />
+            </div>
             <div>
-              <h1 className="text-base leading-tight font-semibold">
-                Linux Resource <span className="font-normal text-muted-foreground">· System Console</span>
-              </h1>
-              <p className="text-xs text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <h1 className="text-base leading-tight font-semibold tracking-tight">
+                  Linux Resource
+                </h1>
+                <span className="inline-flex items-center gap-1 rounded-md border border-cyan-400/25 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wider text-cyan-300 uppercase">
+                  <Terminal className="size-2.5" /> Mission Control
+                </span>
+              </div>
+              <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
                 {sys ? (
                   <>
-                    {sys.hostname} · {sys.platform} · {sys.arch}
+                    <span className="text-cyan-300/90">{sys.hostname}</span>
+                    <span className="text-cyan-500/40">//</span>
+                    <span>{sys.platform}</span>
+                    <span className="text-cyan-500/40">//</span>
+                    <span>{sys.arch}</span>
                   </>
                 ) : (
-                  'conectando ao host…'
+                  'conectando à telemetria do host…'
                 )}
               </p>
             </div>
           </div>
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <HeaderStat icon={<Cpu className="size-4 text-violet-400" />} label="CPU" value={`${cpu.toFixed(0)}%`} />
             <HeaderStat
-              icon={<MemoryStick className="size-4 text-emerald-400" />}
-              label="RAM"
-              value={mem ? `${formatBytes(mem.used, 1)} · ${memPct.toFixed(0)}%` : '—'}
+              icon={<Cpu className="size-3.5 text-violet-400" />}
+              label="CPU"
+              value={sys ? `${sys.ncpu} vCPU` : '—'}
+              progress={cpu}
+              barColor="bg-gradient-to-r from-violet-500 to-cyan-400 shadow-[0_0_8px_rgba(139,92,246,0.5)]"
             />
             <HeaderStat
-              icon={<Activity className="size-4 text-amber-400" />}
+              icon={<MemoryStick className="size-3.5 text-emerald-400" />}
+              label="RAM"
+              value={mem ? formatBytes(mem.used, 1) : '—'}
+              progress={memPct}
+              barColor="bg-gradient-to-r from-emerald-500 to-cyan-400 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+            />
+            <HeaderStat
+              icon={<Activity className="size-3.5 text-amber-400" />}
               label="Load"
               value={(sys?.loadavg ?? [0, 0, 0]).map((l) => l.toFixed(2)).join(' · ')}
+              progress={loadPct}
+              barColor="bg-gradient-to-r from-amber-500 to-orange-400"
             />
             <HeaderStat
-              icon={<Activity className="size-4 text-sky-400" />}
+              icon={<Radio className="size-3.5 text-sky-400" />}
               label="Uptime"
               value={sys ? formatDuration(sys.uptime) : '—'}
             />
-            <Badge variant="outline" className="h-auto gap-1 py-1.5">
-              <span className="size-2 animate-pulse rounded-full bg-emerald-400" />
-              {sys ? `${sys.ncpu} vCPU` : 'offline'}
+            <Badge
+              variant="outline"
+              className="h-auto gap-1.5 border-emerald-500/25 bg-emerald-500/10 px-2.5 py-2 font-mono text-[11px] text-emerald-300"
+            >
+              <span className="size-2 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+              {sys ? 'ONLINE' : 'SYNC'}
             </Badge>
             <UserMenu user={user} onLogout={onLogout} />
           </div>
@@ -239,32 +327,41 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
 
       <main className="mx-auto max-w-[1400px] px-4 py-5 sm:px-6">
         <Tabs defaultValue="dashboard">
-          <TabsList className="mb-4 flex-wrap">
-            <TabsTrigger value="dashboard">
-              <LayoutDashboard className="size-4" /> Dashboard
-            </TabsTrigger>
-            <TabsTrigger value="rede">
-              <Network className="size-4" /> Rede
-            </TabsTrigger>
-            <TabsTrigger value="docker">
-              <Boxes className="size-4" /> Docker
-            </TabsTrigger>
-            <TabsTrigger value="ssh">
-              <Server className="size-4" /> SSH
-            </TabsTrigger>
-            <TabsTrigger value="disco">
-              <HardDrive className="size-4" /> Disco
-            </TabsTrigger>
-            <TabsTrigger value="processos">
-              <Cpu className="size-4" /> Processos
-            </TabsTrigger>
-            <TabsTrigger value="memoria">
-              <MemoryStick className="size-4" /> Memória
-            </TabsTrigger>
-            <TabsTrigger value="limpeza">
-              <Eraser className="size-4" /> Limpeza
-            </TabsTrigger>
-          </TabsList>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <TabsList className="flex-wrap">
+              <TabsTrigger value="dashboard">
+                <LayoutDashboard className="size-4" /> Dashboard
+              </TabsTrigger>
+              <TabsTrigger value="rede">
+                <Network className="size-4" /> Rede
+              </TabsTrigger>
+              <TabsTrigger value="docker">
+                <Boxes className="size-4" /> Docker
+              </TabsTrigger>
+              <TabsTrigger value="ssh">
+                <Server className="size-4" /> SSH
+              </TabsTrigger>
+              <TabsTrigger value="disco">
+                <HardDrive className="size-4" /> Disco
+              </TabsTrigger>
+              <TabsTrigger value="processos">
+                <Cpu className="size-4" /> Processos
+              </TabsTrigger>
+              <TabsTrigger value="memoria">
+                <MemoryStick className="size-4" /> Memória
+              </TabsTrigger>
+              <TabsTrigger value="limpeza">
+                <Eraser className="size-4" /> Limpeza
+              </TabsTrigger>
+            </TabsList>
+
+            <div className="hidden items-center gap-2 rounded-lg border border-cyan-500/15 bg-card/60 px-3 py-1.5 font-mono text-[11px] text-muted-foreground backdrop-blur-md xl:flex">
+              <span className="size-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
+              <span>POLLING: 2000ms</span>
+              <span className="text-cyan-500/40">|</span>
+              <span className="text-cyan-300/90">/proc · /sys · docker.sock</span>
+            </div>
+          </div>
 
           <TabsContent value="dashboard">
             <Dashboard />
@@ -293,12 +390,14 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
         </Tabs>
       </main>
 
-      <footer className="mt-8 border-t">
-        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-center gap-x-2 px-4 py-5 text-center text-xs text-muted-foreground sm:px-6">
+      <footer className="mt-8 border-t border-cyan-500/15 bg-background/40 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-center gap-x-2 px-4 py-5 text-center font-mono text-xs text-muted-foreground sm:px-6">
           <img src="/logo-mark.png" alt="" width={20} height={20} className="size-5 object-cover" />
-          <span className="font-medium text-foreground">Linux Resource</span>
-          <span>· gerenciar, monitorar e otimizar</span>
-          <span className="hidden sm:inline">· dados lidos de /proc, /sys e Docker</span>
+          <span className="font-semibold text-foreground">Linux Resource</span>
+          <span className="text-cyan-500/50">//</span>
+          <span>gerenciar, monitorar e otimizar</span>
+          <span className="hidden text-cyan-500/50 sm:inline">//</span>
+          <span className="hidden sm:inline">telemetria em tempo real via /proc, /sys e Docker</span>
         </div>
       </footer>
     </div>

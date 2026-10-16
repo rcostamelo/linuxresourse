@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { createReadStream, existsSync } from 'node:fs';
 import path from 'node:path';
-import { handleScan, fsInfo } from './disk.js';
+import { handleScan, fsInfo, listDisks } from './disk.js';
 import { startSampler, getProcesses, getMemory, getSystem, getNetworkRates, getHistory, killProcess } from './system.js';
 import { listTasks, runTask } from './clean.js';
 import { getInterfaces, getTcpStates, getLatency, getConnections } from './network.js';
@@ -224,6 +224,10 @@ const server = createServer(async (req, res) => {
     if (p === '/api/fs') {
       const target = url.searchParams.get('path') || '/';
       return json(res, 200, { path: target, fs: fsInfo(target) });
+    }
+
+    if (p === '/api/disks') {
+      return json(res, 200, listDisks());
     }
 
     if (p === '/api/system') return json(res, 200, getSystem());

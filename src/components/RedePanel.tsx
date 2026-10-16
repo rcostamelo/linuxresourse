@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, Cable, Globe, Plug, Radio, Search, Timer, Waypoints } from 'lucide-react'
+import { ArrowDown, ArrowUp, Cable, Globe, Plug, Radio, Search, Timer, Waypoints } from '@/components/ui/lucide-animated'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'

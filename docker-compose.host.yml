@@ -3,7 +3,7 @@
 #   docker compose -f docker-compose.host.yml up -d --build
 #
 # Requer Linux. O container usa o namespace de PID e a rede do host e monta o
-# filesystem em /host (somente leitura) para o scan de disco.
+# filesystem em /host (somente leitura, com propagação rslave para múltiplos discos) para o scan de disco.
 services:
   linux-resource:
     build: .
@@ -23,7 +23,7 @@ services:
     volumes:
       - lr-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
-      - /:/host:ro
+      - /:/host:ro,rslave
       # ~/.ssh do usuário que sobe o compose (modo host roda como root, então lê 600).
       # Sobrescreva com SSH_DIR=/caminho/quando/precisar.
       - "${SSH_DIR:-${HOME}/.ssh}:/root/.ssh:ro"

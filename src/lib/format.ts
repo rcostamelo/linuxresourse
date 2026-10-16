@@ -1,14 +1,15 @@
 export function formatBytes(n?: number | null, digits?: number): string {
-  if (n === null || n === undefined || Number.isNaN(n)) return '—'
-  if (n < 1024) return `${n} B`
+  if (n === null || n === undefined || Number.isNaN(n) || !Number.isFinite(n)) return '—'
+  const safe = Math.max(0, n)
+  if (safe < 1024) return `${Math.round(safe)} B`
   const units = ['KB', 'MB', 'GB', 'TB', 'PB']
-  let v = n / 1024
+  let v = safe / 1024
   let i = 0
   while (v >= 1024 && i < units.length - 1) {
     v /= 1024
     i++
   }
-  const d = digits ?? (v >= 100 ? 0 : v >= 10 ? 1 : 2)
+  const d = Math.max(0, Math.min(2, digits ?? (v >= 100 ? 0 : v >= 10 ? 1 : 2)))
   return `${v.toLocaleString('pt-BR', { maximumFractionDigits: d })} ${units[i]}`
 }
 
@@ -25,7 +26,7 @@ export function formatDuration(totalSec: number): string {
 }
 
 export function formatPct(part: number, whole: number, digits = 1): string {
-  if (!whole) return '0%'
+  if (!whole || !Number.isFinite(part) || !Number.isFinite(whole)) return '0%'
   const p = (part / whole) * 100
   return `${p.toFixed(p >= 10 ? 0 : digits)}%`
 }

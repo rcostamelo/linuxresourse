@@ -303,8 +303,8 @@ function buildSnapshot(server, parsed) {
   const rates = {};
   const interfaces = raw.map((i) => {
     const before = prevRates?.[i.name];
-    const rxRate = dt && before ? Math.max(0, (i.rx - before.rx) / dt) : 0;
-    const txRate = dt && before ? Math.max(0, (i.tx - before.tx) / dt) : 0;
+    const rxRate = dt && before ? Math.round(Math.max(0, (i.rx - before.rx) / dt)) : 0;
+    const txRate = dt && before ? Math.round(Math.max(0, (i.tx - before.tx) / dt)) : 0;
     rates[i.name] = { rx: i.rx, tx: i.tx };
     return { name: i.name, rx: i.rx, tx: i.tx, rxRate, txRate, virtual: VIRTUAL_IFACE.test(i.name) };
   });

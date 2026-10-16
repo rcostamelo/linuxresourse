@@ -17,7 +17,7 @@ import {
   Trash2,
   X,
   Zap,
-} from 'lucide-react'
+} from '@/components/ui/lucide-animated'
 import { toast } from 'sonner'
 import {
   AlertDialog,
