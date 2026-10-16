@@ -21,7 +21,7 @@ import { StatCard } from '@/components/StatCard'
 import { api, type ProcInfo } from '@/lib/api'
 import { usePoll } from '@/lib/usePoll'
 import { formatBytes, formatDuration } from '@/lib/format'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 
 type SortKey = 'cpu' | 'mem' | 'pid' | 'name' | 'elapsedSec'
 

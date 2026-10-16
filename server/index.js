@@ -48,9 +48,16 @@ const json = (res, code, data) => {
 function readBody(req, limit = 1e6) {
   return new Promise((resolve, reject) => {
     let data = '';
+    let tooLarge = false;
     req.on('data', (c) => {
+      // após estourar o limite, para de acumular (o restante é descartado)
+      if (tooLarge) return;
       data += c;
-      if (data.length > limit) reject(auth.httpError(413, 'corpo da requisição muito grande'));
+      if (data.length > limit) {
+        tooLarge = true;
+        data = '';
+        reject(auth.httpError(413, 'corpo da requisição muito grande'));
+      }
     });
     req.on('end', () => resolve(data));
     req.on('error', reject);
@@ -89,7 +96,7 @@ function applyLogo(value, current) {
 function serveStatic(req, res, pathname) {
   let rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
   let full = path.join(DIST, rel);
-  if (!full.startsWith(DIST)) {
+  if (!full.startsWith(DIST + path.sep)) {
     res.writeHead(403);
     return res.end('forbidden');
   }

@@ -1,5 +1,5 @@
 import { useId } from 'react'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 
 function clamp(v: number, min = 0, max = 1) {
   return Math.max(min, Math.min(max, v))

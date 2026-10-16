@@ -39,7 +39,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { api } from '@/lib/api'
 import type { Container, DockerOverview } from '@/lib/api'
 import { formatBytes } from '@/lib/format'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 
 type Pending = { container: Container; action: string } | null
 

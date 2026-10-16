@@ -20,7 +20,7 @@ import { api } from '@/lib/api'
 import type { ProcInfo } from '@/lib/api'
 import { usePoll } from '@/lib/usePoll'
 import { formatBytes, formatDuration } from '@/lib/format'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 
 const C = {
   cpu: '#10b981',

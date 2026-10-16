@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api'
 import type { AuthUser } from '@/lib/api'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 
 type Mode = 'login' | 'setup'
 

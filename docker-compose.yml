@@ -4,6 +4,9 @@ services:
     build: .
     image: linux-resource:latest
     container_name: linux-resource
+    # Publica em todas as interfaces (acessível pela rede). Para expor só na máquina local,
+    # troque por "127.0.0.1:${PORT:-10450}:10450". Em produção, use um proxy com HTTPS na frente
+    # e defina TRUST_PROXY=1 (ver README).
     ports:
       - "${PORT:-10450}:10450"
     environment:
@@ -16,6 +19,7 @@ services:
       # SSH_AUTH_SOCK: /run/agent.sock
     volumes:
       - lr-data:/data
+      # ATENÇÃO: acesso ao docker.sock equivale a root no host. Remova esta linha se não usar a aba Docker.
       - /var/run/docker.sock:/var/run/docker.sock
       # ~/.ssh do usuário que sobe o compose (universal entre máquinas/usuários).
       # Sobrescreva com SSH_DIR=/caminho/quando/precisar. Requer uid do host = 1000

@@ -20,7 +20,7 @@ import { Separator } from '@/components/ui/separator'
 import { StatCard } from '@/components/StatCard'
 import { formatBytes, formatPct } from '@/lib/format'
 import type { DiskItem, FsInfo } from '@/lib/api'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 
 function colorFor(name: string, isDir: boolean) {
   let h = 0

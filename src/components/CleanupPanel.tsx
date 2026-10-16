@@ -31,7 +31,7 @@ import {
 import { StatCard } from '@/components/StatCard'
 import { api, type CleanRunResult, type CleanTask, type CleanTasksResponse, type Risk } from '@/lib/api'
 import { formatBytes } from '@/lib/format'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 
 const RISK: Record<Risk, { label: string; className: string }> = {
   low: { label: 'baixo risco', className: 'text-emerald-400 border-emerald-400/40' },

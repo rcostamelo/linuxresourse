@@ -37,7 +37,7 @@ import { toneColor } from '@/components/charts'
 import { api, sshLogoUrl } from '@/lib/api'
 import type { SshAuthType, SshConfigHost, SshOverview, SshServer } from '@/lib/api'
 import { formatBytes, formatDuration, relTime } from '@/lib/format'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 
 const POLL_MS = 6000
 const selectCls =
@@ -530,7 +530,7 @@ function ServerDialog({
               <Input
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
-                placeholder={authType === 'system' ? 'pmtf-root ou 10.0.0.10' : '10.0.0.10 ou srv.exemplo.com'}
+                placeholder={authType === 'system' ? 'apelido-do-config ou 10.0.0.10' : '10.0.0.10 ou srv.exemplo.com'}
               />
             </label>
             <label className="space-y-1.5 text-xs font-medium text-muted-foreground">

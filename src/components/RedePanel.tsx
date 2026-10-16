@@ -14,7 +14,7 @@ import { api } from '@/lib/api'
 import type { Connection } from '@/lib/api'
 import { usePoll } from '@/lib/usePoll'
 import { formatBytes } from '@/lib/format'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 
 const C = { rx: '#38bdf8', tx: '#e879f9' }
 const formatRate = (bps: number) => `${formatBytes(bps, 1)}/s`

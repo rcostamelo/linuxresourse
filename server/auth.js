@@ -10,6 +10,8 @@ import {
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 const SESSION_MS = SESSION_TTL_DAYS * 24 * 60 * 60 * 1000;
+// hash descartável usado na verificação quando o usuário não existe (ver login)
+const DUMMY_HASH = hashPassword(crypto.randomBytes(16).toString('hex'));
 
 export function httpError(status, message) {
   const err = new Error(message);
@@ -135,6 +137,14 @@ function startSession(userId, req, res) {
 
 const attempts = new Map();
 
+// remove IPs cujas janelas já expiraram, para o mapa não crescer indefinidamente
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, a] of attempts) {
+    if (now - a.firstAt > LOGIN_WINDOW_MS && a.blockedUntil <= now) attempts.delete(ip);
+  }
+}, LOGIN_WINDOW_MS).unref();
+
 export function loginBlockedSeconds(ip) {
   const a = attempts.get(ip);
   if (!a?.blockedUntil || a.blockedUntil <= Date.now()) return 0;
@@ -192,7 +202,8 @@ export function login(username, password, req, res) {
   if (blocked) throw httpError(429, `muitas tentativas. tente novamente em ${blocked}s`);
 
   const row = db.findUserByUsername(String(username ?? '').trim());
-  const ok = row && verifyPassword(String(password ?? ''), row.password_hash);
+  // sempre roda o scrypt, mesmo se o usuário não existir, para não revelar contas pelo tempo de resposta
+  const ok = verifyPassword(String(password ?? ''), row ? row.password_hash : DUMMY_HASH) && !!row;
   if (!ok) {
     noteLoginFailure(ip);
     throw httpError(401, 'usuário ou senha inválidos');

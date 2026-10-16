@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 
 export function StatCard({
