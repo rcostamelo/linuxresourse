@@ -1,6 +1,8 @@
 node_modules/
 dist/
 data/
+release/
+*.deb
 *.log
 .env
 .env.local
