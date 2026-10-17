@@ -48,7 +48,47 @@ CREATE TABLE IF NOT EXISTS servers (
 );
 
 CREATE INDEX IF NOT EXISTS idx_servers_cluster ON servers(cluster_id);
+
+CREATE TABLE IF NOT EXISTS ssh_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  ts INTEGER NOT NULL,
+  cpu REAL NOT NULL,
+  mem_pct REAL NOT NULL,
+  disk_pct REAL NOT NULL,
+  rx_rate INTEGER NOT NULL DEFAULT 0,
+  tx_rate INTEGER NOT NULL DEFAULT 0,
+  load1 REAL NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_ssh_history_server_ts ON ssh_history(server_id, ts);
+
+CREATE TABLE IF NOT EXISTS ssh_audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  user_id INTEGER,
+  username TEXT NOT NULL,
+  server_id INTEGER REFERENCES servers(id) ON DELETE SET NULL,
+  server_name TEXT,
+  action TEXT NOT NULL,
+  detail TEXT,
+  status TEXT NOT NULL DEFAULT 'ok',
+  duration_ms INTEGER,
+  output_preview TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_ssh_audit_ts ON ssh_audit(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_ssh_audit_server_ts ON ssh_audit(server_id, ts DESC);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at INTEGER NOT NULL
+);
 `;
+
+const SSH_HISTORY_MAX_POINTS = Number(process.env.SSH_HISTORY_MAX_POINTS) || 360;
+const SSH_AUDIT_MAX_ROWS = Number(process.env.SSH_AUDIT_MAX_ROWS) || 500;
 
 let db = null;
 
@@ -260,6 +300,143 @@ export function updateServer(id, { clusterId, name, host, port, username, authTy
 
 export function deleteServer(id) {
   return get().prepare('DELETE FROM servers WHERE id = ?').run(id).changes;
+}
+
+export function recordSshHistory(serverId, snap) {
+  if (!snap?.online) return;
+  try {
+    const d = get();
+    const ts = snap.ts || Date.now();
+    const cpu = Number(snap.cpuUsage) || 0;
+    const memPct = Number(snap.memory?.memPct) || 0;
+    const diskPct = Number(snap.primaryDisk?.usedPct) || 0;
+    const rxRate = Math.round(Number(snap.network?.rxRate) || 0);
+    const txRate = Math.round(Number(snap.network?.txRate) || 0);
+    const load1 = Number(snap.loadavg?.[0]) || 0;
+
+    d.prepare(
+      `INSERT INTO ssh_history (server_id, ts, cpu, mem_pct, disk_pct, rx_rate, tx_rate, load1)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(serverId, ts, cpu, memPct, diskPct, rxRate, txRate, load1);
+
+    // Retenção automática por servidor (mantém os últimos SSH_HISTORY_MAX_POINTS registros)
+    d.prepare(
+      `DELETE FROM ssh_history
+       WHERE server_id = ?
+         AND id NOT IN (
+           SELECT id FROM ssh_history WHERE server_id = ? ORDER BY ts DESC LIMIT ?
+         )`,
+    ).run(serverId, serverId, SSH_HISTORY_MAX_POINTS);
+  } catch {
+    /* ignore history write errors */
+  }
+}
+
+export function listSshHistory(serverId, limit = 120) {
+  const safeLimit = Math.max(2, Math.min(500, Number(limit) || 120));
+  const rows = get()
+    .prepare(
+      `SELECT ts, cpu, mem_pct AS memPct, disk_pct AS diskPct, rx_rate AS rxRate, tx_rate AS txRate, load1
+       FROM ssh_history
+       WHERE server_id = ?
+       ORDER BY ts DESC
+       LIMIT ?`,
+    )
+    .all(serverId, safeLimit);
+  return rows.reverse();
+}
+
+export function mapRecentSshHistory(serverIds, limitPerServer = 30) {
+  const out = new Map();
+  for (const id of serverIds) {
+    out.set(id, listSshHistory(id, limitPerServer));
+  }
+  return out;
+}
+
+export function recordSshAudit({
+  userId = null,
+  username = 'sistema',
+  serverId = null,
+  serverName = null,
+  action,
+  detail = null,
+  status = 'ok',
+  durationMs = null,
+  outputPreview = null,
+}) {
+  try {
+    const d = get();
+    const preview = outputPreview ? String(outputPreview).slice(0, 600) : null;
+    d.prepare(
+      `INSERT INTO ssh_audit (ts, user_id, username, server_id, server_name, action, detail, status, duration_ms, output_preview)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      Date.now(),
+      userId ?? null,
+      String(username || 'sistema'),
+      serverId ?? null,
+      serverName ?? null,
+      String(action),
+      detail ? String(detail) : null,
+      status === 'error' ? 'error' : 'ok',
+      durationMs != null ? Math.round(Number(durationMs)) : null,
+      preview,
+    );
+
+    d.prepare(
+      `DELETE FROM ssh_audit
+       WHERE id NOT IN (
+         SELECT id FROM ssh_audit ORDER BY ts DESC LIMIT ?
+       )`,
+    ).run(SSH_AUDIT_MAX_ROWS);
+  } catch {
+    /* ignore audit log write errors */
+  }
+}
+
+export function listSshAudit({ serverId = null, limit = 80 } = {}) {
+  const safeLimit = Math.max(1, Math.min(300, Number(limit) || 80));
+  if (serverId != null && Number.isFinite(Number(serverId))) {
+    return get()
+      .prepare(
+        `SELECT id, ts, user_id AS userId, username, server_id AS serverId, server_name AS serverName,
+                action, detail, status, duration_ms AS durationMs, output_preview AS outputPreview
+         FROM ssh_audit
+         WHERE server_id = ?
+         ORDER BY ts DESC
+         LIMIT ?`,
+      )
+      .all(Number(serverId), safeLimit);
+  }
+  return get()
+    .prepare(
+      `SELECT id, ts, user_id AS userId, username, server_id AS serverId, server_name AS serverName,
+              action, detail, status, duration_ms AS durationMs, output_preview AS outputPreview
+       FROM ssh_audit
+       ORDER BY ts DESC
+       LIMIT ?`,
+    )
+    .all(safeLimit);
+}
+
+export function getSetting(key) {
+  const row = get().prepare('SELECT value FROM settings WHERE key = ?').get(String(key));
+  return row ? row.value : null;
+}
+
+export function setSetting(key, value) {
+  const now = Date.now();
+  get()
+    .prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+    .run(String(key), value == null ? null : String(value), now);
+}
+
+export function deleteSetting(key) {
+  get().prepare('DELETE FROM settings WHERE key = ?').run(String(key));
 }
 
 export { publicUser };

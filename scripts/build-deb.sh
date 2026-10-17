@@ -140,7 +140,8 @@ Description: Console web de telemetria, gerenciamento e otimizacao para Linux
   - Explorador de multiplos discos fisicos e particoes com Treemap interativo
   - Monitor de rede (interfaces, trafego, latencia e conexoes TCP ativas)
   - Gerenciamento de containers e imagens Docker (logs, inspect, prune)
-  - Monitoramento multi-servidor via SSH organizado em clusters
+  - Monitoramento multi-servidor via SSH (clusters, historico, runbooks, host key e auditoria)
+  - Gerenciamento CRUD de usuarios do sistema operacional e Cofre Sudo (AES-256-GCM)
   - Gerenciador de processos, detalhamento de memoria/swap e limpeza segura
 EOF
 

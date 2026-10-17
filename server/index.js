@@ -4,6 +4,14 @@ import path from 'node:path';
 import { handleScan, fsInfo, listDisks } from './disk.js';
 import { startSampler, getProcesses, getMemory, getSystem, getNetworkRates, getHistory, killProcess } from './system.js';
 import { listTasks, runTask } from './clean.js';
+import {
+  listOsUsersOverview,
+  createOsUser,
+  updateOsUser,
+  deleteOsUser,
+  saveAndVerifySudo,
+  clearSudoCredential,
+} from './osUsers.js';
 import { getInterfaces, getTcpStates, getLatency, getConnections } from './network.js';
 import {
   getDockerStatus,
@@ -15,7 +23,25 @@ import {
   runAction,
 } from './docker.js';
 import { DIST, PORT, HOST, DB_FILE } from './config.js';
-import { initDb, listClusters, findClusterByName, getClusterRaw, createCluster, updateCluster, deleteCluster, listServersRaw, getServerRaw, createServer as insertServer, updateServer, deleteServer, publicServer } from './db.js';
+import {
+  initDb,
+  listClusters,
+  findClusterByName,
+  getClusterRaw,
+  createCluster,
+  updateCluster,
+  deleteCluster,
+  listServersRaw,
+  getServerRaw,
+  createServer as insertServer,
+  updateServer,
+  deleteServer,
+  publicServer,
+  listSshHistory,
+  mapRecentSshHistory,
+  recordSshAudit,
+  listSshAudit,
+} from './db.js';
 import { encryptSecret } from './secrets.js';
 import { saveLogo, removeLogo, logoFile } from './logos.js';
 import * as ssh from './ssh.js';
@@ -161,6 +187,7 @@ async function handleAuth(req, res, p, url) {
 const PUBLIC_API = new Set([
   '/api/health',
   '/api/auth/status',
+  '/api/auth/status',
   '/api/auth/setup',
   '/api/auth/login',
   '/api/auth/logout',
@@ -177,6 +204,11 @@ function sshTarget(row) {
   };
 }
 
+function actorFromRes(res) {
+  const u = res.__session?.user;
+  return { userId: u?.id ?? null, username: u?.username ?? 'admin' };
+}
+
 function clusterIdOrNull(value) {
   if (value == null || value === '') return null;
   const id = Number(value);
@@ -188,13 +220,18 @@ async function sshOverview() {
   const raws = listServersRaw();
   const snaps = await ssh.collectAll(raws.map(sshTarget));
   const byId = new Map(snaps.map((s) => [s.id, s]));
+  const histById = mapRecentSshHistory(raws.map((r) => r.id), 30);
 
   const clusters = listClusters().map((c) => ({ id: c.id, name: c.name, logo: c.logo ?? null, servers: [] }));
   const byCluster = new Map(clusters.map((c) => [c.id, c]));
   const ungrouped = { id: null, name: 'Sem cluster', logo: null, servers: [] };
 
   for (const row of raws) {
-    const server = { ...publicServer(row), metrics: byId.get(row.id) ?? null };
+    const server = {
+      ...publicServer(row),
+      metrics: byId.get(row.id) ?? null,
+      history: histById.get(row.id) ?? [],
+    };
     const bucket = row.cluster_id != null ? byCluster.get(row.cluster_id) : ungrouped;
     (bucket ?? ungrouped).servers.push(server);
   }
@@ -309,8 +346,124 @@ const server = createServer(async (req, res) => {
       }
     }
 
+    if (p === '/api/os-users' && req.method === 'GET') {
+      return json(res, 200, await listOsUsersOverview());
+    }
+
+    if (p === '/api/os-users/sudo' && req.method === 'POST') {
+      const body = await readJson(req);
+      try {
+        const sudo = await saveAndVerifySudo(body, actorFromRes(res));
+        return json(res, 200, { ok: true, sudo });
+      } catch (err) {
+        return json(res, 400, { ok: false, error: String(err.message || err) });
+      }
+    }
+
+    if (p === '/api/os-users/sudo/clear' && req.method === 'POST') {
+      const sudo = await clearSudoCredential(actorFromRes(res));
+      return json(res, 200, { ok: true, sudo });
+    }
+
+    if (p === '/api/os-users/create' && req.method === 'POST') {
+      const body = await readJson(req);
+      try {
+        return json(res, 201, await createOsUser(body, actorFromRes(res)));
+      } catch (err) {
+        return json(res, 400, { error: String(err.message || err) });
+      }
+    }
+
+    if (p === '/api/os-users/update' && req.method === 'POST') {
+      const body = await readJson(req);
+      try {
+        return json(res, 200, await updateOsUser(body, actorFromRes(res)));
+      } catch (err) {
+        return json(res, 400, { error: String(err.message || err) });
+      }
+    }
+
+    if (p === '/api/os-users/delete' && req.method === 'POST') {
+      const body = await readJson(req);
+      try {
+        return json(res, 200, await deleteOsUser(body, actorFromRes(res)));
+      } catch (err) {
+        return json(res, 400, { error: String(err.message || err) });
+      }
+    }
+
     if (p === '/api/ssh/overview') return json(res, 200, await sshOverview());
     if (p === '/api/ssh/config') return json(res, 200, ssh.readSshConfig());
+    if (p === '/api/ssh/runbooks') return json(res, 200, { runbooks: ssh.listRunbooks() });
+
+    if (p === '/api/ssh/audit' && req.method === 'GET') {
+      const serverIdParam = url.searchParams.get('serverId');
+      const serverId = serverIdParam ? Number(serverIdParam) : null;
+      const limit = Number(url.searchParams.get('limit')) || 80;
+      return json(res, 200, { items: listSshAudit({ serverId, limit }) });
+    }
+
+    if (p === '/api/ssh/server/detail' && req.method === 'GET') {
+      const id = Number(url.searchParams.get('id'));
+      const limit = Number(url.searchParams.get('limit')) || 120;
+      const force = url.searchParams.get('force') === '1';
+      const current = getServerRaw(id);
+      if (!current) return json(res, 404, { error: 'servidor não encontrado' });
+      const snap = await ssh.collectServer(sshTarget(current), { force });
+      const history = listSshHistory(current.id, limit);
+      const audit = listSshAudit({ serverId: current.id, limit: 40 });
+      return json(res, 200, {
+        ts: Date.now(),
+        server: { ...publicServer(current), metrics: snap, history, audit },
+      });
+    }
+
+    if (p === '/api/ssh/hostkey/reset' && req.method === 'POST') {
+      const body = await readJson(req);
+      const current = getServerRaw(Number(body.serverId));
+      if (!current) return json(res, 404, { error: 'servidor não encontrado' });
+      const actor = actorFromRes(res);
+      const { removed } = ssh.resetHostKey(sshTarget(current));
+      const snap = await ssh.collectServer(sshTarget(current), { force: true });
+      recordSshAudit({
+        ...actor,
+        serverId: current.id,
+        serverName: current.name,
+        action: 'hostkey.reset',
+        detail: `Chave removida do known_hosts (${removed} entrada(s)) · nova chave: ${snap.hostKey?.fingerprint ?? 'pendente'}`,
+        status: snap.online ? 'ok' : 'error',
+        durationMs: snap.collectMs ?? null,
+        outputPreview: snap.error ?? snap.hostKey?.fingerprint ?? null,
+      });
+      return json(res, 200, { ok: true, removed, metrics: snap });
+    }
+
+    if (p === '/api/ssh/runbooks/exec' && req.method === 'POST') {
+      const body = await readJson(req);
+      const current = getServerRaw(Number(body.serverId));
+      if (!current) return json(res, 404, { error: 'servidor não encontrado' });
+      const runbookId = String(body.runbookId || '');
+      const rb = ssh.RUNBOOKS.find((x) => x.id === runbookId);
+      if (!rb) return json(res, 404, { error: 'comando pré-definido não encontrado' });
+
+      if (rb.risk === 'high' && String(body.confirmName || '').trim() !== current.name) {
+        return json(res, 400, { error: `Para executar esta ação crítica, digite exatamente o nome do servidor (${current.name}).` });
+      }
+
+      const actor = actorFromRes(res);
+      const result = await ssh.execRunbook(sshTarget(current), runbookId);
+      recordSshAudit({
+        ...actor,
+        serverId: current.id,
+        serverName: current.name,
+        action: `runbook:${rb.id}`,
+        detail: `${rb.title} (${rb.commandPreview})`,
+        status: result.ok ? 'ok' : 'error',
+        durationMs: result.durationMs,
+        outputPreview: (result.stdout || result.stderr || result.error || '').trim(),
+      });
+      return json(res, 200, result);
+    }
 
     if (p.startsWith('/api/ssh/logo/') && req.method === 'GET') {
       const name = decodeURIComponent(p.slice('/api/ssh/logo/'.length));
@@ -329,7 +482,13 @@ const server = createServer(async (req, res) => {
       if (name.length < 1 || name.length > 60) return json(res, 400, { error: 'o nome do cluster precisa ter de 1 a 60 caracteres' });
       if (findClusterByName(name)) return json(res, 409, { error: 'já existe um cluster com esse nome' });
       const logo = applyLogo(body.logo, null);
-      return json(res, 201, { ok: true, cluster: createCluster(name, logo) });
+      const created = createCluster(name, logo);
+      recordSshAudit({
+        ...actorFromRes(res),
+        action: 'cluster.create',
+        detail: `Cluster "${created.name}" criado`,
+      });
+      return json(res, 201, { ok: true, cluster: created });
     }
 
     if (p === '/api/ssh/clusters/update' && req.method === 'POST') {
@@ -345,7 +504,13 @@ const server = createServer(async (req, res) => {
         if (dup && dup.id !== id) return json(res, 409, { error: 'já existe um cluster com esse nome' });
       }
       const logo = applyLogo(body.logo, current.logo);
-      return json(res, 200, { ok: true, cluster: updateCluster(id, { name, logo }) });
+      const updated = updateCluster(id, { name, logo });
+      recordSshAudit({
+        ...actorFromRes(res),
+        action: 'cluster.update',
+        detail: `Cluster "${updated.name}" atualizado`,
+      });
+      return json(res, 200, { ok: true, cluster: updated });
     }
 
     if (p === '/api/ssh/clusters/delete' && req.method === 'POST') {
@@ -353,7 +518,14 @@ const server = createServer(async (req, res) => {
       const id = Number(body.id);
       const current = getClusterRaw(id);
       const changed = deleteCluster(id);
-      if (changed) removeLogo(current?.logo);
+      if (changed) {
+        removeLogo(current?.logo);
+        recordSshAudit({
+          ...actorFromRes(res),
+          action: 'cluster.delete',
+          detail: `Cluster "${current?.name ?? id}" removido`,
+        });
+      }
       return json(res, changed ? 200 : 404, changed ? { ok: true } : { error: 'cluster não encontrado' });
     }
 
@@ -365,6 +537,13 @@ const server = createServer(async (req, res) => {
       const secretEnc = v.value.authType === 'system' ? null : encryptSecret(v.value.secret);
       const logo = applyLogo(body.logo, null);
       const created = insertServer({ ...v.value, clusterId, secretEnc, logo });
+      recordSshAudit({
+        ...actorFromRes(res),
+        serverId: created.id,
+        serverName: created.name,
+        action: 'server.create',
+        detail: `${created.username ? `${created.username}@` : ''}${created.host}:${created.port} (${created.authType})`,
+      });
       return json(res, 201, { ok: true, server: created });
     }
 
@@ -385,6 +564,13 @@ const server = createServer(async (req, res) => {
       const logo = applyLogo(body.logo, current.logo);
       ssh.invalidateServer(current.id);
       const updated = updateServer(current.id, { ...v.value, clusterId, secretEnc, logo });
+      recordSshAudit({
+        ...actorFromRes(res),
+        serverId: updated.id,
+        serverName: updated.name,
+        action: 'server.update',
+        detail: `${updated.username ? `${updated.username}@` : ''}${updated.host}:${updated.port} (${updated.authType})`,
+      });
       return json(res, 200, { ok: true, server: updated });
     }
 
@@ -394,7 +580,16 @@ const server = createServer(async (req, res) => {
       const current = getServerRaw(id);
       ssh.invalidateServer(id);
       const changed = deleteServer(id);
-      if (changed) removeLogo(current?.logo);
+      if (changed) {
+        removeLogo(current?.logo);
+        recordSshAudit({
+          ...actorFromRes(res),
+          serverId: null,
+          serverName: current?.name ?? String(id),
+          action: 'server.delete',
+          detail: `Servidor "${current?.name ?? id}" (${current?.host ?? ''}) removido`,
+        });
+      }
       return json(res, changed ? 200 : 404, changed ? { ok: true } : { error: 'servidor não encontrado' });
     }
 
@@ -403,10 +598,25 @@ const server = createServer(async (req, res) => {
       const current = getServerRaw(Number(body.id));
       if (!current) return json(res, 404, { error: 'servidor não encontrado' });
       const snap = await ssh.collectServer(sshTarget(current), { force: true });
+      recordSshAudit({
+        ...actorFromRes(res),
+        serverId: current.id,
+        serverName: current.name,
+        action: 'server.test',
+        detail: snap.online
+          ? `Conectado (${snap.hostname ?? current.host} · ${snap.uname ?? ''})`
+          : `Falha (${snap.errorKind ?? 'erro'}): ${snap.error ?? 'sem resposta'}`,
+        status: snap.online ? 'ok' : 'error',
+        durationMs: snap.collectMs ?? null,
+        outputPreview: snap.error ?? snap.uname ?? null,
+      });
       return json(res, 200, {
         ok: !!snap.online,
         online: !!snap.online,
         error: snap.error ?? null,
+        errorKind: snap.errorKind ?? null,
+        errorHint: snap.errorHint ?? null,
+        hostKey: snap.hostKey ?? null,
         hostname: snap.hostname ?? null,
         uname: snap.uname ?? null,
         latencyMs: snap.collectMs ?? null,

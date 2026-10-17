@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { TelemetryLoader } from '@/components/ui/telemetry-loader'
 import { api } from '@/lib/api'
 import type { Container, DockerOverview } from '@/lib/api'
 import { formatBytes } from '@/lib/format'
@@ -149,6 +150,10 @@ export function DockerPanel() {
       [c.name, c.image, c.project, c.service, c.state, c.ports].join(' ').toLowerCase().includes(s),
     )
   }, [data, q])
+
+  if (loading && !data) {
+    return <TelemetryLoader variant="docker" />
+  }
 
   if (error && !data) {
     return (

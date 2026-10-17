@@ -42,6 +42,7 @@ import { RedePanel } from '@/components/RedePanel'
 import { DockerPanel } from '@/components/DockerPanel'
 import { SshPanel } from '@/components/SshPanel'
 import { CleanupPanel } from '@/components/CleanupPanel'
+import { OsUsersPanel } from '@/components/OsUsersPanel'
 import { LoginScreen } from '@/components/LoginScreen'
 import { api, UNAUTHORIZED_EVENT } from '@/lib/api'
 import type { AuthUser } from '@/lib/api'
@@ -350,6 +351,9 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               <TabsTrigger value="memoria">
                 <MemoryStick className="size-4" /> Memória
               </TabsTrigger>
+              <TabsTrigger value="usuarios">
+                <User className="size-4" /> Usuários
+              </TabsTrigger>
               <TabsTrigger value="limpeza">
                 <Eraser className="size-4" /> Limpeza
               </TabsTrigger>
@@ -386,6 +390,9 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
           </TabsContent>
           <TabsContent value="limpeza">
             <CleanupPanel />
+          </TabsContent>
+          <TabsContent value="usuarios">
+            <OsUsersPanel />
           </TabsContent>
         </Tabs>
       </main>

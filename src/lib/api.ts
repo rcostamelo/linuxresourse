@@ -138,6 +138,8 @@ export interface CleanTask {
 export interface CleanTasksResponse {
   canSudo: boolean
   isRoot: boolean
+  sudoUser?: string
+  sudoMethod?: string
   tasks: CleanTask[]
 }
 
@@ -159,6 +161,48 @@ export interface CleanRunResult {
   needsPassword?: boolean
   error?: string | null
   results?: CleanResultItem[]
+}
+
+export interface OsUser {
+  username: string
+  uid: number
+  gid: number
+  fullName: string
+  home: string
+  shell: string
+  primaryGroup: string
+  groups: string[]
+  allGroups: string[]
+  isHuman: boolean
+  isSudoer: boolean
+  isDocker: boolean
+  homeExists: boolean
+  locked: boolean
+  loggedIn: boolean
+}
+
+export interface OsGroup {
+  name: string
+  gid: number
+  count: number
+}
+
+export interface OsSudoStatus {
+  canSudo: boolean
+  isRoot: boolean
+  method: 'root' | 'nopasswd' | 'vault' | 'none'
+  configuredUser: string
+  hasSavedPassword: boolean
+  updatedAt: number | null
+  humanUsers: { username: string; uid: number; isSudoer: boolean }[]
+}
+
+export interface OsUsersOverview {
+  ts: number
+  sudo: OsSudoStatus
+  users: OsUser[]
+  groups: OsGroup[]
+  shells: string[]
 }
 
 export interface NetIface {
@@ -340,8 +384,65 @@ export interface DockerInspect {
 
 export type SshAuthType = 'key' | 'password' | 'system'
 
+export type SshErrorKind =
+  | 'dns'
+  | 'refused'
+  | 'timeout'
+  | 'unreachable'
+  | 'host_key'
+  | 'auth'
+  | 'key_file'
+  | 'binary'
+  | 'unknown'
+
+export interface SshHostKey {
+  known: boolean
+  keyType: string | null
+  fingerprint: string | null
+}
+
+export interface SshRunbook {
+  id: string
+  title: string
+  desc: string
+  category: string
+  risk: Risk
+  commandPreview: string
+}
+
+export interface SshRunbookResult {
+  ok: boolean
+  code: number
+  stdout: string
+  stderr: string
+  durationMs: number
+  error: string | null
+  errorKind: SshErrorKind | null
+  errorHint: string | null
+  runbook: {
+    id: string
+    title: string
+    commandPreview: string
+  }
+}
+
+export interface SshAuditItem {
+  id: number
+  ts: number
+  userId: number | null
+  username: string
+  serverId: number | null
+  serverName: string | null
+  action: string
+  detail: string | null
+  status: 'ok' | 'error'
+  durationMs: number | null
+  outputPreview: string | null
+}
+
 export interface SshDisk {
   fs: string
+  fstype?: string | null
   mount: string
   total: number
   used: number
@@ -351,11 +452,33 @@ export interface SshDisk {
 
 export interface SshIface {
   name: string
+  ipv4?: string | null
   rx: number
   tx: number
   rxRate: number
   txRate: number
+  rxErrs?: number
+  txErrs?: number
   virtual: boolean
+}
+
+export interface SshProcess {
+  pid: number
+  user: string
+  cpu: number
+  memPct: number
+  mem: number
+  name: string
+}
+
+export interface SshHistoryPoint {
+  ts: number
+  cpu: number
+  memPct: number
+  diskPct: number
+  rxRate: number
+  txRate: number
+  load1: number
 }
 
 export interface SshMemory {
@@ -375,9 +498,16 @@ export interface SshSnapshot {
   online: boolean
   ts: number
   error: string | null
+  errorKind?: SshErrorKind | null
+  errorHint?: string | null
+  failCount?: number
+  backoffUntil?: number | null
+  hostKey?: SshHostKey | null
   lastSeen: number | null
   uname?: string | null
+  osName?: string | null
   hostname?: string | null
+  cpuModel?: string | null
   ncpu?: number | null
   uptime?: number | null
   loadavg?: [number, number, number] | null
@@ -386,6 +516,7 @@ export interface SshSnapshot {
   disks?: SshDisk[]
   primaryDisk?: SshDisk | null
   network?: { rxRate: number; txRate: number; rxTotal: number; txTotal: number; interfaces: SshIface[] } | null
+  processes?: SshProcess[]
   collectMs?: number | null
 }
 
@@ -402,6 +533,8 @@ export interface SshServer {
   createdAt: number
   updatedAt: number
   metrics: SshSnapshot | null
+  history?: SshHistoryPoint[]
+  audit?: SshAuditItem[]
 }
 
 export interface SshCluster {
@@ -434,6 +567,9 @@ export interface SshTestResult {
   ok: boolean
   online: boolean
   error?: string | null
+  errorKind?: SshErrorKind | null
+  errorHint?: string | null
+  hostKey?: SshHostKey | null
   hostname?: string | null
   uname?: string | null
   latencyMs?: number | null
@@ -538,7 +674,40 @@ export const api = {
     postJson<{ ok: boolean; pid: number; signal: string }>('/api/kill', { pid, signal }),
   cleanTasks: () => getJson<CleanTasksResponse>('/api/clean/tasks'),
   cleanRun: (id: string, paths?: string[]) => postJson<CleanRunResult>('/api/clean/run', { id, paths }),
+  osUsers: () => getJson<OsUsersOverview>('/api/os-users'),
+  osConfigureSudo: (username: string, password: string) =>
+    postJson<{ ok: boolean; sudo: OsSudoStatus }>('/api/os-users/sudo', { username, password }),
+  osClearSudo: () => postJson<{ ok: boolean; sudo: OsSudoStatus }>('/api/os-users/sudo/clear'),
+  osCreateUser: (input: {
+    username: string
+    fullName?: string
+    shell?: string
+    password: string
+    groups?: string[]
+    createHome?: boolean
+  }) => postJson<OsUsersOverview>('/api/os-users/create', input),
+  osUpdateUser: (input: {
+    username: string
+    fullName?: string
+    shell?: string
+    password?: string
+    groups?: string[]
+    locked?: boolean
+  }) => postJson<OsUsersOverview>('/api/os-users/update', input),
+  osDeleteUser: (username: string, removeHome = false) =>
+    postJson<OsUsersOverview>('/api/os-users/delete', { username, removeHome }),
   sshOverview: () => getJson<SshOverview>('/api/ssh/overview'),
+  sshServerDetail: (id: number, limit = 120, force = false) =>
+    getJson<{ ts: number; server: SshServer }>(`/api/ssh/server/detail?id=${id}&limit=${limit}${force ? '&force=1' : ''}`),
+  sshRunbooks: () => getJson<{ runbooks: SshRunbook[] }>('/api/ssh/runbooks'),
+  sshExecRunbook: (serverId: number, runbookId: string, confirmName?: string) =>
+    postJson<SshRunbookResult>('/api/ssh/runbooks/exec', { serverId, runbookId, confirmName }),
+  sshResetHostKey: (serverId: number) =>
+    postJson<{ ok: boolean; removed: number; metrics: SshSnapshot }>('/api/ssh/hostkey/reset', { serverId }),
+  sshAudit: (serverId?: number | null, limit = 80) =>
+    getJson<{ items: SshAuditItem[] }>(
+      `/api/ssh/audit?limit=${limit}${serverId != null ? `&serverId=${serverId}` : ''}`
+    ),
   sshConfig: () => getJson<SshConfigResponse>('/api/ssh/config'),
   sshCreateCluster: (name: string, logo?: string | null) =>
     postJson<{ ok: boolean; cluster: { id: number; name: string; logo: string | null } }>('/api/ssh/clusters', { name, logo }),

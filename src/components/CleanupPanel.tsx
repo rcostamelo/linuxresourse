@@ -3,6 +3,7 @@ import {
   Check,
   Copy,
   Eraser,
+  KeyRound,
   Loader2,
   RefreshCw,
   ShieldAlert,
@@ -29,7 +30,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { StatCard } from '@/components/StatCard'
-import { api, type CleanRunResult, type CleanTask, type CleanTasksResponse, type Risk } from '@/lib/api'
+import { SudoConfigModal } from '@/components/OsUsersPanel'
+import { api, type CleanRunResult, type CleanTask, type CleanTasksResponse, type OsSudoStatus, type Risk } from '@/lib/api'
 import { formatBytes } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -39,17 +41,24 @@ const RISK: Record<Risk, { label: string; className: string }> = {
   high: { label: 'irreversível', className: 'text-rose-400 border-rose-400/40' },
 }
 
+const FALLBACK_CMD: Record<string, string> = {
+  thumbs: 'rm -rf ~/.cache/thumbnails/*',
+  trash: 'rm -rf ~/.local/share/Trash/files/* ~/.local/share/Trash/info/*',
+  'swap-orphans': 'sudo rm -f /swapfile*',
+}
+
 function CopyCommand({ command }: { command: string }) {
   const [done, setDone] = useState(false)
   return (
     <button
+      type="button"
       onClick={() => {
         navigator.clipboard?.writeText(command).then(() => {
           setDone(true)
           setTimeout(() => setDone(false), 1200)
         })
       }}
-      className="group/cmd flex w-full items-center gap-2 rounded-md border bg-muted/40 px-2.5 py-1.5 text-left font-mono text-xs hover:bg-muted"
+      className="group/cmd flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border bg-muted/40 px-2.5 text-left font-mono text-xs transition-colors hover:bg-muted"
       title="Copiar comando"
     >
       <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
@@ -63,6 +72,8 @@ function CopyCommand({ command }: { command: string }) {
 
 export function CleanupPanel() {
   const [data, setData] = useState<CleanTasksResponse | null>(null)
+  const [sudoStatus, setSudoStatus] = useState<OsSudoStatus | null>(null)
+  const [sudoOpen, setSudoOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [confirm, setConfirm] = useState<CleanTask | null>(null)
   const [running, setRunning] = useState(false)
@@ -72,8 +83,9 @@ export function CleanupPanel() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const d = await api.cleanTasks()
+      const [d, u] = await Promise.all([api.cleanTasks(), api.osUsers().catch(() => null)])
       setData(d)
+      if (u?.sudo) setSudoStatus(u.sudo)
       const orphans = d.tasks.find((t) => t.special === 'swap')?.orphans ?? []
       setSelected(new Set(orphans.map((o) => o.path)))
     } catch (e) {
@@ -98,7 +110,7 @@ export function CleanupPanel() {
       const r = await api.cleanRun(task.id, paths)
       setLast(r)
       if (r.needsPassword) {
-        toast.error('Precisa de senha (sudo)', { description: `Rode no terminal: ${r.command}` })
+        toast.error('Precisa de senha (sudo)', { description: `Configure o Cofre Sudo ou rode no terminal: ${r.command}` })
       } else if (r.ok === false || (r.results && r.results.some((x) => !x.ok))) {
         toast.warning('Concluído com falhas', { description: `Liberado: ${formatBytes(r.freed)}` })
       } else {
@@ -115,6 +127,14 @@ export function CleanupPanel() {
 
   const selectedFreed = orphans.filter((o) => selected.has(o.path)).reduce((s, o) => s + o.size, 0)
 
+  const sudoValue = data?.isRoot
+    ? 'root'
+    : sudoStatus?.method === 'vault'
+      ? `cofre (${sudoStatus.configuredUser})`
+      : data?.canSudo
+        ? 'sem senha'
+        : 'requer senha'
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -126,8 +146,8 @@ export function CleanupPanel() {
         />
         <StatCard
           label="Permissão sudo"
-          value={data?.isRoot ? 'root' : data?.canSudo ? 'sem senha' : 'requer senha'}
-          hint={data?.canSudo || data?.isRoot ? 'tarefas sudo executáveis daqui' : 'copie o comando para o terminal'}
+          value={sudoValue}
+          hint={data?.canSudo || data?.isRoot ? 'tarefas sudo executáveis daqui' : 'clique em Configurar Sudo abaixo'}
           icon={<ShieldAlert className={cn('size-4', data?.canSudo || data?.isRoot ? 'text-emerald-400' : 'text-amber-400')} />}
         />
         <StatCard
@@ -138,15 +158,44 @@ export function CleanupPanel() {
         />
       </div>
 
-      {!data?.canSudo && !data?.isRoot && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-sm">
-          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-400" />
+      <div
+        className={cn(
+          'flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3.5 py-2.5 text-sm',
+          data?.canSudo || data?.isRoot
+            ? 'border-emerald-500/25 bg-emerald-500/5'
+            : 'border-amber-400/30 bg-amber-400/5',
+        )}
+      >
+        <div className="flex items-start gap-2.5">
+          {data?.canSudo || data?.isRoot ? (
+            <Check className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+          ) : (
+            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-400" />
+          )}
           <p className="text-muted-foreground">
-            Você não tem sudo sem senha. As tarefas marcadas com <b className="text-foreground">sudo</b> não podem ser
-            executadas pelo navegador — use <b className="text-foreground">copiar comando</b> e rode no terminal.
+            {data?.canSudo || data?.isRoot ? (
+              <>
+                Elevação <b className="text-foreground">sudo</b> ativa ({sudoValue}). Todas as tarefas de limpeza podem ser
+                executadas diretamente pelo navegador.
+              </>
+            ) : (
+              <>
+                Você não tem sudo configurado. Configure a credencial no <b className="text-foreground">Cofre Sudo</b> para
+                liberar os botões <b className="text-foreground">Limpar</b> ou copie o comando para o terminal.
+              </>
+            )}
           </p>
         </div>
-      )}
+        <Button
+          size="sm"
+          variant={data?.canSudo || data?.isRoot ? 'outline' : 'default'}
+          className="shrink-0"
+          onClick={() => setSudoOpen(true)}
+        >
+          <KeyRound className="size-3.5" />
+          {data?.canSudo || data?.isRoot ? 'Credencial Sudo' : 'Configurar Sudo'}
+        </Button>
+      </div>
 
       {orphans.length > 0 && (
         <Card className="border-rose-400/30 p-4">
@@ -201,7 +250,7 @@ export function CleanupPanel() {
       {loading && !data ? (
         <div className="space-y-2">
           {[...Array(5)].map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full" />
+            <Skeleton key={i} className="h-24 w-full" />
           ))}
         </div>
       ) : (
@@ -209,30 +258,37 @@ export function CleanupPanel() {
           {(data?.tasks ?? []).map((t) => {
             const sudoBlocked = t.sudo && !data?.canSudo && !data?.isRoot
             const disabled = running || (t.special === 'swap' ? selected.size === 0 : false)
+            const cmdDisplay = t.command || FALLBACK_CMD[t.id] || ''
             return (
-              <Card key={t.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{t.title}</span>
-                    <Badge variant="outline" className={cn('h-5 px-1.5 text-[10px]', RISK[t.risk].className)}>
-                      {RISK[t.risk].label}
-                    </Badge>
-                    {t.sudo && (
-                      <Badge variant={sudoBlocked ? 'destructive' : 'secondary'} className="h-5 px-1.5 text-[10px]">
-                        sudo{sudoBlocked ? ' · requer senha' : ''}
+              <Card key={t.id} className="gap-2.5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{t.title}</span>
+                      <Badge variant="outline" className={cn('h-5 px-1.5 text-[10px]', RISK[t.risk].className)}>
+                        {RISK[t.risk].label}
                       </Badge>
-                    )}
+                      {t.sudo && (
+                        <Badge variant={sudoBlocked ? 'destructive' : 'secondary'} className="h-5 px-1.5 text-[10px]">
+                          sudo{sudoBlocked ? ' · requer senha' : ''}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{t.desc}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground">{t.desc}</p>
-                  {t.command && <CopyCommand command={t.command} />}
+                  <span className="shrink-0 font-mono text-sm font-semibold tabular-nums">
+                    {formatBytes(t.size)}
+                  </span>
                 </div>
-                <div className="flex shrink-0 items-center gap-3 sm:flex-col sm:items-end sm:gap-2">
-                  <span className="text-sm font-semibold tabular-nums">{formatBytes(t.size)}</span>
+
+                <div className="flex items-center gap-2.5">
+                  {cmdDisplay && <CopyCommand command={cmdDisplay} />}
                   <Button
                     variant={t.risk === 'high' ? 'destructive' : 'secondary'}
                     size="sm"
+                    className="ml-auto shrink-0"
                     disabled={disabled || sudoBlocked}
-                    title={sudoBlocked ? 'Requer senha — use o comando no terminal' : undefined}
+                    title={sudoBlocked ? 'Configure o Cofre Sudo acima ou use o comando no terminal' : undefined}
                     onClick={() => setConfirm(t)}
                   >
                     {running && confirm?.id === t.id ? <Loader2 className="animate-spin" /> : <Eraser />}
@@ -260,7 +316,7 @@ export function CleanupPanel() {
           </div>
           <pre className="mt-2 max-h-48 overflow-auto rounded-md border bg-muted/40 p-2 text-[11px] leading-relaxed whitespace-pre-wrap">
             {last.needsPassword
-              ? `Precisa de senha. Rode:\n\n  ${last.command}`
+              ? `Precisa de senha. Configure o Cofre Sudo ou rode:\n\n  ${last.command}`
               : [last.stdout, last.stderr].filter(Boolean).join('\n') || last.error || 'Sem saída.'}
             {last.results?.length
               ? last.results.map((r) => `\n${r.ok ? 'ok' : 'falhou'}  ${r.target}${r.error ? ' — ' + r.error : ''}`).join('')
@@ -268,6 +324,17 @@ export function CleanupPanel() {
           </pre>
         </Card>
       )}
+
+      <SudoConfigModal
+        open={sudoOpen}
+        onOpenChange={setSudoOpen}
+        defaultUser={sudoStatus?.configuredUser || 'raony'}
+        humanUsers={sudoStatus?.humanUsers || []}
+        hasSavedPassword={!!sudoStatus?.hasSavedPassword}
+        onSaved={() => {
+          load()
+        }}
+      />
 
       <AlertDialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
         <AlertDialogContent>
