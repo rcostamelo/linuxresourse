@@ -630,12 +630,44 @@ async function postJson<T>(url: string, body?: unknown): Promise<T> {
   return (await r.json()) as T
 }
 
+export type PanelRole = 'admin' | 'viewer'
+
 export interface AuthUser {
   id: number
   username: string
-  role: string
+  role: PanelRole
   createdAt: number
   lastLoginAt: number | null
+}
+
+export interface PanelUser extends AuthUser {
+  activeSessions: number
+}
+
+export interface PanelSession {
+  tokenPrefix: string
+  userId: number
+  username: string
+  role: PanelRole
+  createdAt: number
+  expiresAt: number
+  ip: string | null
+  userAgent: string | null
+  current: boolean
+}
+
+export interface PanelUsersOverview {
+  ts: number
+  users: PanelUser[]
+  sessions: PanelSession[]
+}
+
+export interface AuthHostSummary {
+  hostname: string
+  platform: string
+  arch: string
+  ncpu: number
+  uptime: number
 }
 
 export interface AuthStatus {
@@ -643,6 +675,7 @@ export interface AuthStatus {
   authenticated: boolean
   user: AuthUser | null
   sessionExpiresAt: number | null
+  host?: AuthHostSummary
 }
 
 export const api = {
@@ -655,6 +688,17 @@ export const api = {
   authMe: () => getJson<{ user: AuthUser; sessionExpiresAt: number }>('/api/auth/me'),
   authChangePassword: (currentPassword: string, newPassword: string) =>
     postJson<{ ok: boolean }>('/api/auth/password', { currentPassword, newPassword }),
+  panelUsersOverview: () => getJson<PanelUsersOverview>('/api/auth/users'),
+  panelCreateUser: (input: { username: string; password: string; role: PanelRole }) =>
+    postJson<PanelUsersOverview>('/api/auth/users/create', input),
+  panelUpdateUser: (input: { id: number; role?: PanelRole; password?: string }) =>
+    postJson<PanelUsersOverview>('/api/auth/users/update', input),
+  panelDeleteUser: (id: number) =>
+    postJson<PanelUsersOverview>('/api/auth/users/delete', { id }),
+  panelRevokeSession: (tokenPrefix: string) =>
+    postJson<PanelUsersOverview>('/api/auth/sessions/revoke', { tokenPrefix }),
+  panelRevokeOtherSessions: () =>
+    postJson<PanelUsersOverview>('/api/auth/sessions/revoke', { allOthers: true }),
   system: () => getJson<SystemInfo>('/api/system'),
   processes: () => getJson<ProcessesResponse>('/api/processes'),
   memory: () => getJson<MemoryInfo>('/api/memory'),

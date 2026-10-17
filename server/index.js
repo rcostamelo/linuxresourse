@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { createReadStream, existsSync } from 'node:fs';
+import { timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { handleScan, fsInfo, listDisks } from './disk.js';
 import { startSampler, getProcesses, getMemory, getSystem, getNetworkRates, getHistory, killProcess } from './system.js';
@@ -22,7 +23,7 @@ import {
   getInspect,
   runAction,
 } from './docker.js';
-import { DIST, PORT, HOST, DB_FILE } from './config.js';
+import { DIST, PORT, HOST, DB_FILE, WIDGET_TOKEN } from './config.js';
 import {
   initDb,
   listClusters,
@@ -181,6 +182,40 @@ async function handleAuth(req, res, p, url) {
     return json(res, 200, { ok: true });
   }
 
+  if (p === '/api/auth/users' && req.method === 'GET') {
+    const session = auth.sessionFromRequest(req);
+    if (!session) return json(res, 401, { error: 'não autenticado' });
+    return json(res, 200, auth.panelUsersOverview(session));
+  }
+
+  if (p === '/api/auth/users/create' && req.method === 'POST') {
+    const session = auth.sessionFromRequest(req);
+    if (!session) return json(res, 401, { error: 'não autenticado' });
+    const body = await readJson(req);
+    return json(res, 201, auth.adminCreatePanelUser(session, body));
+  }
+
+  if (p === '/api/auth/users/update' && req.method === 'POST') {
+    const session = auth.sessionFromRequest(req);
+    if (!session) return json(res, 401, { error: 'não autenticado' });
+    const body = await readJson(req);
+    return json(res, 200, auth.adminUpdatePanelUser(session, body));
+  }
+
+  if (p === '/api/auth/users/delete' && req.method === 'POST') {
+    const session = auth.sessionFromRequest(req);
+    if (!session) return json(res, 401, { error: 'não autenticado' });
+    const body = await readJson(req);
+    return json(res, 200, auth.adminDeletePanelUser(session, body));
+  }
+
+  if (p === '/api/auth/sessions/revoke' && req.method === 'POST') {
+    const session = auth.sessionFromRequest(req);
+    if (!session) return json(res, 401, { error: 'não autenticado' });
+    const body = await readJson(req);
+    return json(res, 200, auth.revokePanelSession(session, body));
+  }
+
   return json(res, 404, { error: 'not found' });
 }
 
@@ -192,6 +227,35 @@ const PUBLIC_API = new Set([
   '/api/auth/login',
   '/api/auth/logout',
 ]);
+
+// Widget de desktop: leitura compacta, protegida por token (header X-Widget-Token).
+function isWidgetAuthorized(req) {
+  const given = Buffer.from(String(req.headers['x-widget-token'] || ''));
+  const expected = Buffer.from(WIDGET_TOKEN);
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}
+
+function widgetMetrics() {
+  const sys = getSystem();
+  const { rx, tx } = getNetworkRates();
+  return getMemory().then((memory) => ({
+    ts: Date.now(),
+    hostname: sys.hostname,
+    cpuModel: sys.cpuModel,
+    cpuUsage: sys.cpuUsage,
+    ncpu: sys.ncpu,
+    loadavg: sys.loadavg,
+    uptime: sys.uptime,
+    memory: {
+      total: memory.total,
+      used: memory.used,
+      swapTotal: memory.swapTotal,
+      swapUsed: memory.swapUsed,
+    },
+    network: { rx, tx },
+    history: getHistory().points.slice(-60).map((pt) => ({ cpu: pt.cpu, mem: pt.mem })),
+  }));
+}
 
 function sshTarget(row) {
   return {
@@ -246,10 +310,19 @@ const server = createServer(async (req, res) => {
   try {
     if (p.startsWith('/api/auth/')) return await handleAuth(req, res, p, url);
 
+    if (p === '/api/widget/metrics' && req.method === 'GET') {
+      if (!WIDGET_TOKEN) return json(res, 404, { error: 'widget desativado (defina WIDGET_TOKEN)' });
+      if (!isWidgetAuthorized(req)) return json(res, 401, { error: 'token do widget inválido' });
+      return json(res, 200, await widgetMetrics());
+    }
+
     if (p.startsWith('/api/')) {
       if (!PUBLIC_API.has(p)) {
         const session = auth.sessionFromRequest(req);
         if (!session) return json(res, 401, { error: 'não autenticado' });
+        if (req.method === 'POST' && session.user.role === 'viewer') {
+          return json(res, 403, { error: 'Conta somente leitura (viewer). Apenas administradores podem executar ações.' });
+        }
         res.__session = session;
       }
     }

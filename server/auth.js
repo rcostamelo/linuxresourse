@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import * as db from './db.js';
+import { getSystem } from './system.js';
 import {
   COOKIE_NAME,
   SESSION_TTL_DAYS,
@@ -172,11 +173,19 @@ export function isSetupNeeded() {
 
 export function status(req) {
   const session = sessionFromRequest(req);
+  const sys = getSystem();
   return {
     setup: isSetupNeeded(),
     authenticated: !!session,
     user: session?.user ?? null,
     sessionExpiresAt: session?.expiresAt ?? null,
+    host: {
+      hostname: sys.hostname,
+      platform: sys.platform,
+      arch: sys.arch,
+      ncpu: sys.ncpu,
+      uptime: sys.uptime,
+    },
   };
 }
 
@@ -232,4 +241,139 @@ export function changePassword(session, currentPassword, nextPassword) {
   db.updatePassword(session.user.id, hashPassword(String(nextPassword)));
   db.deleteUserSessionsExcept(session.user.id, session.tokenHash);
   return true;
+}
+
+/* -------------------- Gerenciamento de Usuários do Painel -------------------- */
+
+export function requireAdmin(session) {
+  if (!session?.user) throw httpError(401, 'não autenticado');
+  if (session.user.role === 'viewer') {
+    throw httpError(403, 'Acesso somente leitura (viewer). Apenas administradores podem executar esta ação.');
+  }
+}
+
+export function panelUsersOverview(session) {
+  const rawSessions = db.listActiveSessions();
+  const countByUser = new Map();
+  for (const s of rawSessions) {
+    countByUser.set(s.user_id, (countByUser.get(s.user_id) || 0) + 1);
+  }
+
+  const users = db.listUsers().map((u) => ({
+    ...u,
+    activeSessions: countByUser.get(u.id) || 0,
+  }));
+
+  const sessions = rawSessions.map((s) => ({
+    tokenPrefix: String(s.token_hash).slice(0, 16),
+    userId: s.user_id,
+    username: s.username,
+    role: s.role,
+    createdAt: s.created_at,
+    expiresAt: s.expires_at,
+    ip: s.ip,
+    userAgent: s.user_agent,
+    current: s.token_hash === session?.tokenHash,
+  }));
+
+  return { ts: Date.now(), users, sessions };
+}
+
+export function adminCreatePanelUser(session, { username, password, role }) {
+  requireAdmin(session);
+  const cleanRole = role === 'viewer' ? 'viewer' : 'admin';
+  const created = createAccount(username, password, cleanRole);
+  db.recordSshAudit({
+    userId: session.user.id,
+    username: session.user.username,
+    action: 'panel_user.create',
+    detail: `Conta do painel "${created.username}" criada com perfil ${cleanRole}`,
+    status: 'ok',
+  });
+  return panelUsersOverview(session);
+}
+
+export function adminUpdatePanelUser(session, { id, role, password }) {
+  requireAdmin(session);
+  const targetId = Number(id);
+  const row = db.findUserById(targetId);
+  if (!row) throw httpError(404, 'usuário não encontrado');
+
+  if (role !== undefined) {
+    const nextRole = role === 'viewer' ? 'viewer' : 'admin';
+    if (row.role === 'admin' && nextRole !== 'admin' && db.countAdmins() <= 1) {
+      throw httpError(400, 'Não é possível remover o perfil admin do único administrador do painel.');
+    }
+    db.updateUserRole(targetId, nextRole);
+  }
+
+  if (password !== undefined && String(password).trim() !== '') {
+    const pe = validatePassword(password);
+    if (pe) throw httpError(400, pe);
+    db.updatePassword(targetId, hashPassword(String(password)));
+    if (targetId === session.user.id) {
+      db.deleteUserSessionsExcept(targetId, session.tokenHash);
+    } else {
+      db.deleteUserSessions(targetId);
+    }
+  }
+
+  db.recordSshAudit({
+    userId: session.user.id,
+    username: session.user.username,
+    action: 'panel_user.update',
+    detail: `Conta do painel "${row.username}" atualizada`,
+    status: 'ok',
+  });
+
+  return panelUsersOverview(session);
+}
+
+export function adminDeletePanelUser(session, { id }) {
+  requireAdmin(session);
+  const targetId = Number(id);
+  if (targetId === session.user.id) {
+    throw httpError(400, 'Você não pode excluir a sua própria conta em uso.');
+  }
+  const row = db.findUserById(targetId);
+  if (!row) throw httpError(404, 'usuário não encontrado');
+  if (row.role === 'admin' && db.countAdmins() <= 1) {
+    throw httpError(400, 'Não é possível excluir o último administrador do painel.');
+  }
+  db.deleteUser(targetId);
+  db.recordSshAudit({
+    userId: session.user.id,
+    username: session.user.username,
+    action: 'panel_user.delete',
+    detail: `Conta do painel "${row.username}" removida`,
+    status: 'ok',
+  });
+  return panelUsersOverview(session);
+}
+
+export function revokePanelSession(session, { tokenPrefix, allOthers }) {
+  if (allOthers) {
+    if (session.user.role === 'admin') {
+      const all = db.listActiveSessions();
+      for (const s of all) {
+        if (s.token_hash !== session.tokenHash) db.deleteSession(s.token_hash);
+      }
+    } else {
+      db.deleteUserSessionsExcept(session.user.id, session.tokenHash);
+    }
+    return panelUsersOverview(session);
+  }
+
+  const clean = String(tokenPrefix || '').replace(/[^a-f0-9]/gi, '');
+  if (clean.length < 8) throw httpError(400, 'sessão inválida');
+  if (session.tokenHash.startsWith(clean)) {
+    throw httpError(400, 'Para encerrar a sessão atual, use o botão Sair.');
+  }
+  const target = db.listActiveSessions().find((s) => String(s.token_hash).startsWith(clean));
+  if (!target) throw httpError(404, 'sessão não encontrada');
+  if (session.user.role !== 'admin' && target.user_id !== session.user.id) {
+    throw httpError(403, 'sem permissão para encerrar sessão de outro usuário');
+  }
+  db.deleteSession(target.token_hash);
+  return panelUsersOverview(session);
 }

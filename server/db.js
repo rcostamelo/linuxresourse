@@ -164,6 +164,23 @@ export function listUsers() {
   return get().prepare('SELECT * FROM users ORDER BY id').all().map(publicUser);
 }
 
+export function updateUserRole(id, role) {
+  get().prepare('UPDATE users SET role = ? WHERE id = ?').run(String(role), Number(id));
+}
+
+export function countAdmins() {
+  return get().prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").get().n;
+}
+
+export function listActiveSessions() {
+  purgeExpiredSessions();
+  return get()
+    .prepare(
+      "SELECT s.token_hash, s.user_id, s.created_at, s.expires_at, s.ip, s.user_agent, u.username, u.role FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.expires_at > ? ORDER BY s.created_at DESC"
+    )
+    .all(Date.now());
+}
+
 export function createSession({ tokenHash, userId, expiresAt, ip, userAgent }) {
   get()
     .prepare('INSERT INTO sessions (token_hash, user_id, created_at, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?)')

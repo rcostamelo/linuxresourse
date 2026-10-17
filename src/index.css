@@ -137,3 +137,14 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 }
+
+/* Mantém fundo escuro quando o navegador preenche usuário/senha automaticamente */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 36px oklch(0.165 0.026 255) inset !important;
+  -webkit-text-fill-color: oklch(0.96 0.01 230) !important;
+  caret-color: oklch(0.96 0.01 230) !important;
+  transition: background-color 9999s ease-in-out 0s;
+}

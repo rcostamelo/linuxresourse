@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity,
   Boxes,
+  ChevronDown,
   Cpu,
   Eraser,
   HardDrive,
@@ -22,7 +23,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   AlertDialog,
@@ -44,8 +44,9 @@ import { SshPanel } from '@/components/SshPanel'
 import { CleanupPanel } from '@/components/CleanupPanel'
 import { OsUsersPanel } from '@/components/OsUsersPanel'
 import { LoginScreen } from '@/components/LoginScreen'
+import { PanelUsersModal } from '@/components/PanelUsersModal'
 import { api, UNAUTHORIZED_EVENT } from '@/lib/api'
-import type { AuthUser } from '@/lib/api'
+import type { AuthHostSummary, AuthUser } from '@/lib/api'
 import { usePoll } from '@/lib/usePoll'
 import { formatBytes, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -141,12 +142,33 @@ function Splash() {
 }
 
 function UserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [panelUsersOpen, setPanelUsersOpen] = useState(false)
   const [open, setOpen] = useState(false)
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    function onDocClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDocClick)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [menuOpen])
 
   async function changePassword() {
     setError(null)
@@ -169,23 +191,70 @@ function UserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => void }) 
 
   return (
     <>
-      <div className="flex items-center gap-1 rounded-lg border border-cyan-500/15 bg-card/75 py-1 pr-1 pl-2 backdrop-blur-md">
-        <Badge variant="secondary" className="h-auto gap-1.5 border-transparent bg-transparent px-1 font-mono text-xs">
-          <User className="size-3.5 text-cyan-400" />
-          {user.username}
-        </Badge>
-        <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs hover:bg-cyan-500/10 hover:text-cyan-200" onClick={() => setOpen(true)}>
-          <KeyRound className="size-3.5" /> Senha
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1.5 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-          onClick={onLogout}
+      <div ref={menuRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          className={cn(
+            'flex items-center gap-2 rounded-lg border bg-card/75 px-3 py-1.5 font-mono text-xs backdrop-blur-md transition-colors',
+            menuOpen
+              ? 'border-cyan-400/40 bg-cyan-500/10 text-cyan-200'
+              : 'border-cyan-500/15 text-foreground hover:border-cyan-400/30 hover:bg-card',
+          )}
         >
-          <LogOut className="size-3.5" /> Sair
-        </Button>
+          <User className="size-3.5 text-cyan-400" />
+          <span className="font-medium">{user.username}</span>
+          <ChevronDown
+            className={cn('size-3.5 text-muted-foreground transition-transform duration-200', menuOpen && 'rotate-180 text-cyan-300')}
+          />
+        </button>
+
+        {menuOpen && (
+          <div className="absolute right-0 z-50 mt-1.5 w-48 overflow-hidden rounded-xl border border-cyan-500/25 bg-popover/95 p-1 shadow-[0_12px_40px_rgba(0,0,0,0.65)] backdrop-blur-xl">
+            <div className="border-b border-white/10 px-2.5 py-2">
+              <div className="font-mono text-xs font-semibold text-foreground">{user.username}</div>
+              <div className="font-mono text-[10px] tracking-wider text-cyan-400/80 uppercase">{user.role || 'admin'}</div>
+            </div>
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false)
+                  setPanelUsersOpen(true)
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-cyan-500/15 hover:text-cyan-200"
+              >
+                <ShieldCheck className="size-3.5 text-emerald-400" />
+                <span>Usuários do gerenciador</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false)
+                  setOpen(true)
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-cyan-500/15 hover:text-cyan-200"
+              >
+                <KeyRound className="size-3.5 text-cyan-400" />
+                <span>Alterar senha</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false)
+                  onLogout()
+                }}
+                className="mt-0.5 flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs text-rose-400 transition-colors hover:bg-destructive/15 hover:text-rose-300"
+              >
+                <LogOut className="size-3.5" />
+                <span>Sair</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
+      <PanelUsersModal open={panelUsersOpen} onOpenChange={setPanelUsersOpen} currentUser={user} />
 
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>
@@ -415,6 +484,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [setup, setSetup] = useState(false)
   const [user, setUser] = useState<AuthUser | null>(null)
+  const [hostInfo, setHostInfo] = useState<AuthHostSummary | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -424,6 +494,7 @@ export default function App() {
         if (!alive) return
         setSetup(s.setup)
         setUser(s.authenticated ? s.user : null)
+        if (s.host) setHostInfo(s.host)
       })
       .catch(() => {
         if (alive) setUser(null)
@@ -461,6 +532,7 @@ export default function App() {
       ) : (
         <LoginScreen
           mode={setup ? 'setup' : 'login'}
+          host={hostInfo}
           onSuccess={(u) => {
             setUser(u)
             setSetup(false)

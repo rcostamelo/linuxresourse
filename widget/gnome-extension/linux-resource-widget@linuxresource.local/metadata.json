@@ -1,0 +1,6 @@
+{
+  "uuid": "linux-resource-widget@linuxresource.local",
+  "name": "Linux Resource Widget",
+  "description": "Widget de desktop com CPU, memória, rede e carga, alimentado pelo painel Linux Resource (/api/widget/metrics).",
+  "shell-version": ["46"]
+}

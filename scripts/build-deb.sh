@@ -28,6 +28,8 @@ mkdir -p \
   "$STAGE_DIR/usr/bin" \
   "$STAGE_DIR/usr/share/applications" \
   "$STAGE_DIR/usr/share/pixmaps" \
+  "$STAGE_DIR/usr/share/gnome-shell/extensions" \
+  "$STAGE_DIR/etc/xdg/autostart" \
   "$STAGE_DIR/var/lib/$PKG_NAME"
 
 cp -r "$ROOT_DIR/dist" "$STAGE_DIR/opt/$PKG_NAME/dist"
@@ -36,6 +38,10 @@ cp "$ROOT_DIR/package.json" "$STAGE_DIR/opt/$PKG_NAME/package.json"
 [ -f "$ROOT_DIR/LICENSE" ] && cp "$ROOT_DIR/LICENSE" "$STAGE_DIR/opt/$PKG_NAME/LICENSE"
 [ -f "$ROOT_DIR/README.md" ] && cp "$ROOT_DIR/README.md" "$STAGE_DIR/opt/$PKG_NAME/README.md"
 [ -f "$ROOT_DIR/public/logo-mark.png" ] && cp "$ROOT_DIR/public/logo-mark.png" "$STAGE_DIR/usr/share/pixmaps/$PKG_NAME.png"
+
+# Widget de desktop (extensão GNOME Shell), instalado para todos os usuários
+WIDGET_UUID="linux-resource-widget@linuxresource.local"
+cp -r "$ROOT_DIR/widget/gnome-extension/$WIDGET_UUID" "$STAGE_DIR/usr/share/gnome-shell/extensions/$WIDGET_UUID"
 
 # Arquivo de configuração em /etc/default/linux-resource
 cat > "$STAGE_DIR/etc/default/$PKG_NAME" <<'EOF'
@@ -57,6 +63,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=-/etc/default/linux-resource
+EnvironmentFile=-/etc/linux-resource/widget.env
 WorkingDirectory=/opt/linux-resource
 ExecStart=/usr/bin/env node --disable-warning=ExperimentalWarning /opt/linux-resource/server/index.js
 Restart=on-failure
@@ -117,6 +124,19 @@ Categories=System;Monitor;Utility;
 Keywords=linux;monitor;disk;docker;ssh;process;memory;network;
 EOF
 
+# Autostart: ativa o widget na sessão GNOME de cada usuário no login.
+# gnome-extensions enable apenas acrescenta a extensão à lista, sem apagar as outras.
+cat > "$STAGE_DIR/etc/xdg/autostart/$PKG_NAME-widget.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Linux Resource Widget
+Comment=Ativa o widget de telemetria na barra superior do GNOME
+Exec=gnome-extensions enable $WIDGET_UUID
+OnlyShowIn=GNOME;
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+EOF
+
 # Calcula tamanho instalado em KB
 INSTALLED_SIZE="$(du -sk "$STAGE_DIR" | awk '{print $1}')"
 
@@ -128,7 +148,7 @@ Priority: optional
 Architecture: $ARCH
 Installed-Size: $INSTALLED_SIZE
 Depends: nodejs (>= 22.5.0), coreutils, iputils-ping, openssh-client
-Recommends: docker.io | docker-ce | docker-ce-cli, sshpass
+Recommends: docker.io | docker-ce | docker-ce-cli, sshpass, gnome-shell
 Maintainer: Raony <rcostamelo@gmail.com>
 Homepage: https://github.com/rcostamelo/linuxresourse
 Description: Console web de telemetria, gerenciamento e otimizacao para Linux
@@ -143,6 +163,7 @@ Description: Console web de telemetria, gerenciamento e otimizacao para Linux
   - Monitoramento multi-servidor via SSH (clusters, historico, runbooks, host key e auditoria)
   - Gerenciamento CRUD de usuarios do sistema operacional e Cofre Sudo (AES-256-GCM)
   - Gerenciador de processos, detalhamento de memoria/swap e limpeza segura
+  - Widget de desktop GNOME na barra superior (CPU, RAM, rede), opcional
 EOF
 
 cat > "$STAGE_DIR/DEBIAN/conffiles" <<'EOF'
@@ -155,6 +176,17 @@ set -e
 
 mkdir -p /var/lib/linux-resource
 chmod 0700 /var/lib/linux-resource
+
+# Token do widget: gerado só na primeira instalação (upgrades preservam o existente)
+if [ ! -f /etc/linux-resource/widget.env ]; then
+  mkdir -p /etc/linux-resource
+  chmod 0755 /etc/linux-resource
+  token="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+  printf 'WIDGET_TOKEN=%s\n' "$token" > /etc/linux-resource/widget.env
+  chmod 0600 /etc/linux-resource/widget.env
+  printf '%s' "$token" > /etc/linux-resource/widget-token
+  chmod 0644 /etc/linux-resource/widget-token
+fi
 
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
   systemctl daemon-reload >/dev/null 2>&1 || true
@@ -195,7 +227,7 @@ if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
 fi
 
 if [ "$1" = "purge" ]; then
-  rm -rf /var/lib/linux-resource
+  rm -rf /var/lib/linux-resource /etc/linux-resource
 fi
 EOF
 chmod 0755 "$STAGE_DIR/DEBIAN/postrm"
