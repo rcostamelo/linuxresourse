@@ -3,7 +3,7 @@ import { createReadStream, existsSync } from 'node:fs';
 import { timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { handleScan, fsInfo, listDisks } from './disk.js';
-import { startSampler, getProcesses, getMemory, getSystem, getNetworkRates, getHistory, killProcess } from './system.js';
+import { startSampler, getProcesses, getMemory, getSystem, getGpu, getNetworkRates, getHistory, killProcess } from './system.js';
 import { listTasks, runTask } from './clean.js';
 import {
   listOsUsersOverview,
@@ -238,6 +238,7 @@ function isWidgetAuthorized(req) {
 function widgetMetrics() {
   const sys = getSystem();
   const { rx, tx } = getNetworkRates();
+  const gpu = getGpu();
   return getMemory().then((memory) => ({
     ts: Date.now(),
     hostname: sys.hostname,
@@ -252,8 +253,19 @@ function widgetMetrics() {
       swapTotal: memory.swapTotal,
       swapUsed: memory.swapUsed,
     },
+    gpu: gpu.primary
+      ? {
+          name: gpu.primary.name,
+          vendor: gpu.primary.vendor,
+          utilization: gpu.primary.utilization,
+          memUsed: gpu.primary.memUsed,
+          memTotal: gpu.primary.memTotal,
+          memPct: gpu.primary.memPct,
+          temperature: gpu.primary.temperature,
+        }
+      : null,
     network: { rx, tx },
-    history: getHistory().points.slice(-60).map((pt) => ({ cpu: pt.cpu, mem: pt.mem })),
+    history: getHistory().points.slice(-60).map((pt) => ({ cpu: pt.cpu, mem: pt.mem, gpu: pt.gpu ?? null })),
   }));
 }
 
@@ -341,6 +353,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (p === '/api/system') return json(res, 200, getSystem());
+    if (p === '/api/gpu') return json(res, 200, getGpu());
     if (p === '/api/processes') return json(res, 200, getProcesses());
     if (p === '/api/memory') return json(res, 200, await getMemory());
     if (p === '/api/history') return json(res, 200, getHistory());
@@ -365,6 +378,7 @@ const server = createServer(async (req, res) => {
         ts: Date.now(),
         system: getSystem(),
         memory,
+        gpu: getGpu(),
         network: { ...getNetworkRates(), interfaces },
       });
     }
@@ -663,7 +677,7 @@ const server = createServer(async (req, res) => {
           detail: `Servidor "${current?.name ?? id}" (${current?.host ?? ''}) removido`,
         });
       }
-      return json(res, changed ? 200 : 404, changed ? { ok: true } : { error: 'servidor não encontrado' });
+      return json(res, changed ? 200 : 404, changed ? { ok: true } : { error: 'cluster não encontrado' });
     }
 
     if (p === '/api/ssh/servers/test' && req.method === 'POST') {

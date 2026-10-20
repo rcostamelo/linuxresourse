@@ -1,6 +1,7 @@
 import { promises as fsp, readFileSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import { readNetDev } from './network.js';
+import { sampleGpus } from './gpu.js';
 import { SCAN_ROOT } from './config.js';
 
 const PAGE_SIZE = 4096;
@@ -11,7 +12,14 @@ const HISTORY_MAX = 180;
 let users = new Map();
 let usersTs = 0;
 
-let snapshot = { ts: 0, processes: [], cpuUsage: 0, loadavg: [0, 0, 0], network: { rx: 0, tx: 0, perIface: {} } };
+let snapshot = {
+  ts: 0,
+  processes: [],
+  cpuUsage: 0,
+  loadavg: [0, 0, 0],
+  network: { rx: 0, tx: 0, perIface: {} },
+  gpu: { available: false, count: 0, gpus: [], primary: null },
+};
 let history = [];
 let prevTicks = new Map();
 let prevTotal = 0;
@@ -146,9 +154,12 @@ async function sample() {
   const ncpu = os.cpus().length;
   await loadUsers();
 
-  const mem = await getMemory();
-  const uptimeSec = await readUptime();
-  const cpu = await readCpuTotal();
+  const [mem, uptimeSec, cpu, gpu] = await Promise.all([
+    getMemory(),
+    readUptime(),
+    readCpuTotal(),
+    sampleGpus(),
+  ]);
 
   let cpuUsage = snapshot.cpuUsage;
   let dtTotal = 0;
@@ -205,6 +216,7 @@ async function sample() {
     cpuUsage,
     loadavg: os.loadavg(),
     network: { rx: totalRx, tx: totalTx, perIface, ts: now },
+    gpu,
     _idle: cpu ? cpu.idle : snapshot._idle,
   };
 
@@ -216,6 +228,10 @@ async function sample() {
     rx: totalRx,
     tx: totalTx,
     load: os.loadavg()[0],
+    gpu: gpu.primary?.utilization ?? null,
+    gpuMem: gpu.primary?.memPct ?? null,
+    gpuTemp: gpu.primary?.temperature ?? null,
+    gpuPower: gpu.primary?.powerDraw ?? null,
   });
   if (history.length > HISTORY_MAX) history = history.slice(-HISTORY_MAX);
 }
@@ -256,6 +272,10 @@ function readHostHostname() {
   return os.hostname();
 }
 
+export function getGpu() {
+  return snapshot.gpu;
+}
+
 export function getSystem() {
   const cpus = os.cpus();
   return {
@@ -267,6 +287,7 @@ export function getSystem() {
     ncpu: cpus.length,
     cpuModel: cpus[0]?.model || 'CPU',
     cpuUsage: snapshot.cpuUsage,
+    gpu: snapshot.gpu,
   };
 }
 

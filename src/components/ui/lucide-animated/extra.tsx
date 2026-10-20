@@ -140,6 +140,40 @@ export const MemoryStickIcon = createAnimatedIcon("MemoryStickIcon", (controls) 
   </motion.g>
 ));
 
+export const GpuIcon = createAnimatedIcon("GpuIcon", (controls) => (
+  <motion.g
+    animate={controls}
+    variants={{
+      normal: { scale: 1 },
+      animate: { scale: [1, 1.06, 1], transition: { duration: 0.4 } },
+    }}
+  >
+    <path d="M2 21V3" />
+    <path d="M2 5h18a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2.26" />
+    <path d="M7 17v3a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-3" />
+    <motion.circle
+      animate={controls}
+      variants={{
+        normal: { scale: 1 },
+        animate: { scale: [1, 1.2, 1], transition: { duration: 0.45 } },
+      }}
+      cx="16"
+      cy="11"
+      r="2"
+    />
+    <motion.circle
+      animate={controls}
+      variants={{
+        normal: { scale: 1 },
+        animate: { scale: [1, 1.2, 1], transition: { duration: 0.45, delay: 0.1 } },
+      }}
+      cx="8"
+      cy="11"
+      r="2"
+    />
+  </motion.g>
+));
+
 export const NetworkIcon = createAnimatedIcon("NetworkIcon", (controls) => (
   <>
     <motion.rect

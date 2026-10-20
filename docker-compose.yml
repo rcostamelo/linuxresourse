@@ -1,4 +1,4 @@
-# Linux Resource — mapeando discos, processos e Docker reais do host
+# Linux Resource — mapeando discos, processos, GPUs e Docker reais do host
 services:
   linux-resource:
     build: .
@@ -21,8 +21,14 @@ services:
       DOCKER_GID: ${DOCKER_GID:-984}
       # Se usar ssh-agent (chave com senha), descomente e use junto com o volume do agent:
       # SSH_AUTH_SOCK: /run/agent.sock
+    # Permite leitura de telemetria de placas de vídeo NVIDIA (major 195) e DRM/AMD/Intel (major 226)
+    device_cgroup_rules:
+      - "c 195:* rmw"
+      - "c 226:* rmw"
     volumes:
       - lr-data:/data
+      # Monta /dev em leitura para acesso aos dispositivos de telemetria de GPU (/dev/nvidia*, /dev/dri/*)
+      - /dev:/dev:ro
       # Monta o filesystem do host (incluindo sub-montagens em /media e /mnt via rslave) em modo leitura
       - /:/host:ro,rslave
       # ATENÇÃO: acesso ao docker.sock equivale a root no host. Remova esta linha se não usar a aba Docker.

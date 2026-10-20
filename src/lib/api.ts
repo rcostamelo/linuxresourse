@@ -110,6 +110,70 @@ export interface MemoryInfo {
   swapUsed: number
 }
 
+export interface GpuProcess {
+  pid: number
+  type?: string
+  name: string
+  memUsed: number
+  smUtil?: number | null
+  memUtil?: number | null
+  encUtil?: number | null
+  decUtil?: number | null
+}
+
+export interface GpuConnector {
+  name: string
+  status: string
+  connected: boolean
+  mode: string | null
+}
+
+export interface GpuDevice {
+  index: number
+  id: string
+  name: string
+  vendor: 'NVIDIA' | 'AMD' | 'Intel' | string
+  driver: string | null
+  vbios?: string | null
+  busId: string | null
+  pcieGen?: number | null
+  pcieGenMax?: number | null
+  pcieWidth?: number | null
+  pcieWidthMax?: number | null
+  utilization: number | null
+  memUtilization: number | null
+  encoderFps?: number | null
+  memTotal: number | null
+  memUsed: number | null
+  memFree: number | null
+  memReserved?: number | null
+  memPct: number | null
+  temperature: number | null
+  powerDraw: number | null
+  powerLimit: number | null
+  powerDefaultLimit?: number | null
+  powerMaxLimit?: number | null
+  fanSpeed: number | null
+  clockCore: number | null
+  clockCoreMax?: number | null
+  clockSm?: number | null
+  clockMem: number | null
+  clockMemMax?: number | null
+  clockVideo?: number | null
+  pstate: string | null
+  displayActive?: boolean | null
+  persistenceMode?: boolean | null
+  connectors?: GpuConnector[]
+  processes: GpuProcess[]
+}
+
+export interface GpuSummary {
+  available: boolean
+  count: number
+  gpus: GpuDevice[]
+  primary: GpuDevice | null
+}
+
 export interface SystemInfo {
   hostname: string
   platform: string
@@ -119,6 +183,7 @@ export interface SystemInfo {
   ncpu: number
   cpuModel: string
   cpuUsage: number
+  gpu?: GpuSummary
 }
 
 export type Risk = 'low' | 'medium' | 'high'
@@ -251,6 +316,7 @@ export interface MetricsResponse {
   ts: number
   system: SystemInfo
   memory: MemoryInfo
+  gpu?: GpuSummary
   network: { rx: number; tx: number; ts: number; perIface: Record<string, IfaceRate>; interfaces: NetIface[] }
 }
 
@@ -262,6 +328,10 @@ export interface HistoryPoint {
   rx: number
   tx: number
   load: number
+  gpu?: number | null
+  gpuMem?: number | null
+  gpuTemp?: number | null
+  gpuPower?: number | null
 }
 
 export interface HistoryResponse {
@@ -668,6 +738,11 @@ export interface AuthHostSummary {
   arch: string
   ncpu: number
   uptime: number
+  gpu?: {
+    name: string
+    vendor: string
+    count: number
+  } | null
 }
 
 export interface AuthStatus {
@@ -700,6 +775,7 @@ export const api = {
   panelRevokeOtherSessions: () =>
     postJson<PanelUsersOverview>('/api/auth/sessions/revoke', { allOthers: true }),
   system: () => getJson<SystemInfo>('/api/system'),
+  gpu: () => getJson<GpuSummary>('/api/gpu'),
   processes: () => getJson<ProcessesResponse>('/api/processes'),
   memory: () => getJson<MemoryInfo>('/api/memory'),
   fs: (path = '/') => getJson<{ path: string; fs: FsInfo }>(`/api/fs?path=${encodeURIComponent(path)}`),

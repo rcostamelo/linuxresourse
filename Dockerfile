@@ -13,8 +13,8 @@ FROM node:24-alpine AS run
 WORKDIR /app
 
 # du (GNU coreutils, scan de disco), ping (latência), docker CLI (aba Docker),
-# openssh-client + sshpass (aba SSH: chave e senha)
-RUN apk add --no-cache coreutils iputils docker-cli tzdata openssh-client sshpass
+# openssh-client + sshpass (aba SSH: chave e senha), pciutils (lspci para detecção de GPU)
+RUN apk add --no-cache coreutils iputils docker-cli tzdata openssh-client sshpass pciutils
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \

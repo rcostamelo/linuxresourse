@@ -174,6 +174,7 @@ export function isSetupNeeded() {
 export function status(req) {
   const session = sessionFromRequest(req);
   const sys = getSystem();
+  const primaryGpu = sys.gpu?.primary || null;
   return {
     setup: isSetupNeeded(),
     authenticated: !!session,
@@ -185,6 +186,13 @@ export function status(req) {
       arch: sys.arch,
       ncpu: sys.ncpu,
       uptime: sys.uptime,
+      gpu: primaryGpu
+        ? {
+            name: primaryGpu.name,
+            vendor: primaryGpu.vendor,
+            count: sys.gpu.count,
+          }
+        : null,
     },
   };
 }

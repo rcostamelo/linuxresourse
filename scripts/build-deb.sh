@@ -121,7 +121,7 @@ Icon=linux-resource
 Terminal=false
 Type=Application
 Categories=System;Monitor;Utility;
-Keywords=linux;monitor;disk;docker;ssh;process;memory;network;
+Keywords=linux;monitor;disk;docker;ssh;process;memory;network;gpu;
 EOF
 
 # Autostart: ativa o widget na sessão GNOME de cada usuário no login.
@@ -148,7 +148,7 @@ Priority: optional
 Architecture: $ARCH
 Installed-Size: $INSTALLED_SIZE
 Depends: nodejs (>= 22.5.0), coreutils, iputils-ping, openssh-client
-Recommends: docker.io | docker-ce | docker-ce-cli, sshpass, gnome-shell
+Recommends: docker.io | docker-ce | docker-ce-cli, sshpass, pciutils, gnome-shell
 Maintainer: Raony <rcostamelo@gmail.com>
 Homepage: https://github.com/rcostamelo/linuxresourse
 Description: Console web de telemetria, gerenciamento e otimizacao para Linux
@@ -156,7 +156,8 @@ Description: Console web de telemetria, gerenciamento e otimizacao para Linux
  para monitorar, gerenciar e otimizar desktops e servidores Linux.
  .
  Recursos incluidos:
-  - Dashboard em tempo real (CPU, RAM, Load, Rede e Pool de Discos)
+  - Dashboard em tempo real (CPU, RAM, GPU, Load, Rede e Pool de Discos)
+  - Telemetria automatica e relatorio completo de GPU (NVIDIA, AMD e Intel)
   - Explorador de multiplos discos fisicos e particoes com Treemap interativo
   - Monitor de rede (interfaces, trafego, latencia e conexoes TCP ativas)
   - Gerenciamento de containers e imagens Docker (logs, inspect, prune)

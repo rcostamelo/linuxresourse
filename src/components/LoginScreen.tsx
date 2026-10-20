@@ -6,6 +6,7 @@ import {
   Cpu,
   Eye,
   EyeOff,
+  Gpu,
   HardDrive,
   KeyRound,
   Loader2,
@@ -37,7 +38,7 @@ const MODULES = [
   {
     icon: Cpu,
     title: 'Telemetria /proc & /sys',
-    desc: 'CPU por núcleo, memória, swap, processos e load em tempo real (2s).',
+    desc: 'CPU por núcleo, GPU, memória, swap, processos e load em tempo real (2s).',
     color: 'text-cyan-400 bg-cyan-500/10 ring-cyan-400/25',
   },
   {
@@ -198,7 +199,7 @@ export function LoginScreen({
           />
           <span className="text-sm font-semibold tracking-tight">Linux Resource</span>
           <span className="hidden items-center gap-1 rounded border border-cyan-400/25 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wider text-cyan-300 uppercase sm:inline-flex">
-            <Terminal className="size-2.5" /> Mission Control v1.0.2
+            <Terminal className="size-2.5" /> Mission Control v1.0.4
           </span>
         </div>
 
@@ -216,6 +217,12 @@ export function LoginScreen({
                 <Cpu className="size-3 text-violet-400" />
                 {host.ncpu} vCPU
               </span>
+              {host.gpu && (
+                <span className="hidden items-center gap-1 rounded-md border border-white/10 bg-black/30 px-2 py-0.5 text-cyan-300 md:inline-flex">
+                  <Gpu className="size-3 text-cyan-400" />
+                  {host.gpu.name}
+                </span>
+              )}
               <span className="hidden items-center gap-1 rounded-md border border-white/10 bg-black/30 px-2 py-0.5 lg:inline-flex">
                 <Radio className="size-3 text-sky-400" />
                 up {formatDuration(host.uptime)}

@@ -50,6 +50,7 @@ export {
   CableIcon as Cable,
   ContainerIcon as Container,
   EraserIcon as Eraser,
+  GpuIcon as Gpu,
   HardDriveIcon as HardDrive,
   ImageIcon as Image,
   ImagePlusIcon as ImagePlus,

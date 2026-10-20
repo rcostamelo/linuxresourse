@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Cpu,
   Eraser,
+  Gpu,
   HardDrive,
   KeyRound,
   LayoutDashboard,
@@ -38,6 +39,7 @@ import { Dashboard } from '@/components/Dashboard'
 import { DiskExplorer } from '@/components/DiskExplorer'
 import { ProcessManager } from '@/components/ProcessManager'
 import { MemoryPanel } from '@/components/MemoryPanel'
+import { GpuPanel } from '@/components/GpuPanel'
 import { RedePanel } from '@/components/RedePanel'
 import { DockerPanel } from '@/components/DockerPanel'
 import { SshPanel } from '@/components/SshPanel'
@@ -51,16 +53,27 @@ import { usePoll } from '@/lib/usePoll'
 import { formatBytes, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
+function shortGpuName(name: string): string {
+  return (
+    name
+      .replace(/\b(NVIDIA|AMD|Intel|Corporation|GeForce|Radeon|Graphics|Series|Laptop|Mobile)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim() || name
+  )
+}
+
 function HeaderStat({
   icon,
   label,
   value,
+  title,
   progress,
   barColor = 'bg-cyan-400',
 }: {
   icon: React.ReactNode
   label: string
   value: string
+  title?: string
   progress?: number
   barColor?: string
 }) {
@@ -76,6 +89,7 @@ function HeaderStat({
 
   return (
     <div
+      title={title}
       className={cn(
         'relative flex min-w-[116px] flex-col justify-between gap-1.5 overflow-hidden rounded-lg border bg-card/75 px-3 py-1.5 backdrop-blur-md transition-colors',
         isCritical ? 'border-rose-500/40 bg-rose-950/20' : 'border-cyan-500/15 hover:border-cyan-400/30',
@@ -315,6 +329,8 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   const cpu = sys?.cpuUsage ?? 0
   const memPct = mem ? (mem.used / mem.total) * 100 : 0
   const loadPct = sys ? Math.min(100, ((sys.loadavg?.[0] ?? 0) / Math.max(1, sys.ncpu)) * 100) : 0
+  const gpuInfo = sys?.gpu
+  const primaryGpu = gpuInfo?.available ? gpuInfo.primary : null
 
   return (
     <div className="min-h-dvh bg-transparent">
@@ -371,6 +387,22 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               progress={memPct}
               barColor="bg-gradient-to-r from-emerald-500 to-cyan-400 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
             />
+            {primaryGpu && (
+              <HeaderStat
+                icon={<Gpu className="size-3.5 text-cyan-400" />}
+                label={gpuInfo && gpuInfo.count > 1 ? `GPU (${gpuInfo.count})` : 'GPU'}
+                title={`${primaryGpu.name}${primaryGpu.driver ? ` · Driver ${primaryGpu.driver}` : ''}`}
+                value={
+                  primaryGpu.temperature != null
+                    ? `${shortGpuName(primaryGpu.name)} · ${primaryGpu.temperature}°C`
+                    : primaryGpu.memUsed != null
+                      ? `${shortGpuName(primaryGpu.name)} · ${formatBytes(primaryGpu.memUsed, 1)}`
+                      : shortGpuName(primaryGpu.name)
+                }
+                progress={primaryGpu.utilization ?? primaryGpu.memPct ?? undefined}
+                barColor="bg-gradient-to-r from-cyan-400 to-emerald-400 shadow-[0_0_8px_rgba(34,211,238,0.5)]"
+              />
+            )}
             <HeaderStat
               icon={<Activity className="size-3.5 text-amber-400" />}
               label="Load"
@@ -420,6 +452,11 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               <TabsTrigger value="memoria">
                 <MemoryStick className="size-4" /> Memória
               </TabsTrigger>
+              {primaryGpu && (
+                <TabsTrigger value="gpu">
+                  <Gpu className="size-4" /> GPU
+                </TabsTrigger>
+              )}
               <TabsTrigger value="usuarios">
                 <User className="size-4" /> Usuários
               </TabsTrigger>
@@ -432,7 +469,9 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               <span className="size-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
               <span>POLLING: 2000ms</span>
               <span className="text-cyan-500/40">|</span>
-              <span className="text-cyan-300/90">/proc · /sys · docker.sock</span>
+              <span className="text-cyan-300/90">
+                /proc · /sys · docker.sock{primaryGpu ? ` · ${primaryGpu.vendor} GPU` : ''}
+              </span>
             </div>
           </div>
 
@@ -457,6 +496,11 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
           <TabsContent value="memoria">
             <MemoryPanel />
           </TabsContent>
+          {primaryGpu && (
+            <TabsContent value="gpu">
+              <GpuPanel />
+            </TabsContent>
+          )}
           <TabsContent value="limpeza">
             <CleanupPanel />
           </TabsContent>
