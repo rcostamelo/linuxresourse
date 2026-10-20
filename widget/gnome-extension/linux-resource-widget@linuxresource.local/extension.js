@@ -16,6 +16,7 @@ const SYSTEM_TOKEN_FILE = '/etc/linux-resource/widget-token';
 const ICONS = {
   cpu: 'computer-symbolic',
   ram: 'media-flash-symbolic',
+  gpu: 'video-display-symbolic',
   net: 'network-transmit-receive-symbolic',
 };
 
@@ -75,14 +76,18 @@ export default class LinuxResourceWidget extends Extension {
     const row = new St.BoxLayout({ style: 'spacing: 12px;', y_align: Clutter.ActorAlign.CENTER });
     this._cpu = metric(ICONS.cpu);
     this._ram = metric(ICONS.ram);
+    this._gpu = metric(ICONS.gpu);
+    this._gpu.box.visible = false; // só aparece quando existir placa de vídeo
     this._net = metric(ICONS.net);
-    for (const m of [this._cpu, this._ram, this._net]) row.add_child(m.box);
+    for (const m of [this._cpu, this._ram, this._gpu, this._net]) row.add_child(m.box);
     this._indicator.add_child(row);
 
     this._hostItem = new PopupMenu.PopupMenuItem('', { reactive: false, can_focus: false });
     this._loadItem = new PopupMenu.PopupMenuItem('', { reactive: false, can_focus: false });
     this._swapItem = new PopupMenu.PopupMenuItem('', { reactive: false, can_focus: false });
-    for (const item of [this._hostItem, this._loadItem, this._swapItem]) this._indicator.menu.addMenuItem(item);
+    this._gpuItem = new PopupMenu.PopupMenuItem('', { reactive: false, can_focus: false });
+    this._gpuItem.visible = false;
+    for (const item of [this._hostItem, this._loadItem, this._swapItem, this._gpuItem]) this._indicator.menu.addMenuItem(item);
 
     // Lado direito da barra, logo após o relógio.
     Main.panel.addToStatusArea(this.uuid, this._indicator, 0, 'right');
@@ -132,6 +137,8 @@ export default class LinuxResourceWidget extends Extension {
     this._cpu.text.text = '--';
     this._ram.text.text = '--';
     this._net.text.text = '--';
+    this._gpu.box.visible = false;
+    this._gpuItem.visible = false;
     this._hostItem.label.text = reason;
     this._loadItem.label.text = '';
     this._swapItem.label.text = '';
@@ -142,11 +149,28 @@ export default class LinuxResourceWidget extends Extension {
     const ram = d.memory.total ? Math.round((d.memory.used / d.memory.total) * 100) : 0;
     const swapPct = d.memory.swapTotal ? (d.memory.swapUsed / d.memory.swapTotal) * 100 : 0;
 
-    this._cpu.text.text = `${cpu}%`;
+    this._cpu.text.text = d.cpuTemp != null ? `${cpu}% ${Math.round(d.cpuTemp)}°C` : `${cpu}%`;
     this._cpu.text.style = `font-weight: 600; color: ${levelColor(cpu)};`;
     this._ram.text.text = `${ram}%`;
     this._ram.text.style = `font-weight: 600; color: ${levelColor(ram)};`;
     this._net.text.text = `↓${rate(d.network.rx)} ↑${rate(d.network.tx)}`;
+
+    // GPU: usa a carga do núcleo; se indisponível, cai para o uso de VRAM.
+    const g = d.gpu;
+    const gpuPct = g ? Math.round(g.utilization ?? g.memPct ?? 0) : 0;
+    this._gpu.box.visible = !!g;
+    this._gpuItem.visible = !!g;
+    if (g) {
+      this._gpu.text.text = `${gpuPct}%`;
+      this._gpu.text.style = `font-weight: 600; color: ${levelColor(gpuPct)};`;
+      const parts = [g.name];
+      if (g.utilization != null) parts.push(`${Math.round(g.utilization)}%`);
+      if (g.memUsed != null && g.memTotal) {
+        parts.push(`VRAM ${(g.memUsed / 1024 ** 3).toFixed(1)}/${(g.memTotal / 1024 ** 3).toFixed(1)} GB`);
+      }
+      if (g.temperature != null) parts.push(`${Math.round(g.temperature)}°C`);
+      this._gpuItem.label.text = `GPU ${parts.join(' · ')}`;
+    }
 
     this._hostItem.label.text = `${d.hostname} · ${d.cpuModel}`;
     this._loadItem.label.text =

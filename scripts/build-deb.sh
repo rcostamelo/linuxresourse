@@ -156,7 +156,7 @@ Description: Console web de telemetria, gerenciamento e otimizacao para Linux
  para monitorar, gerenciar e otimizar desktops e servidores Linux.
  .
  Recursos incluidos:
-  - Dashboard em tempo real (CPU, RAM, GPU, Load, Rede e Pool de Discos)
+  - Dashboard em tempo real (CPU com temperatura, RAM, GPU, Load, Rede e Pool de Discos)
   - Telemetria automatica e relatorio completo de GPU (NVIDIA, AMD e Intel)
   - Explorador de multiplos discos fisicos e particoes com Treemap interativo
   - Monitor de rede (interfaces, trafego, latencia e conexoes TCP ativas)
@@ -164,7 +164,7 @@ Description: Console web de telemetria, gerenciamento e otimizacao para Linux
   - Monitoramento multi-servidor via SSH (clusters, historico, runbooks, host key e auditoria)
   - Gerenciamento CRUD de usuarios do sistema operacional e Cofre Sudo (AES-256-GCM)
   - Gerenciador de processos, detalhamento de memoria/swap e limpeza segura
-  - Widget de desktop GNOME na barra superior (CPU, RAM, rede), opcional
+  - Widget de desktop GNOME na barra superior (CPU com temperatura, RAM, GPU quando houver, rede), opcional
 EOF
 
 cat > "$STAGE_DIR/DEBIAN/conffiles" <<'EOF'

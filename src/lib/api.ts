@@ -174,6 +174,16 @@ export interface GpuSummary {
   primary: GpuDevice | null
 }
 
+export interface CpuTemp {
+  available: boolean
+  temperature: number | null
+  label: string | null
+  sensor: string | null
+  max: number | null
+  crit: number | null
+  cores: { label: string; temp: number }[]
+}
+
 export interface SystemInfo {
   hostname: string
   platform: string
@@ -183,6 +193,7 @@ export interface SystemInfo {
   ncpu: number
   cpuModel: string
   cpuUsage: number
+  cpuTemp?: CpuTemp
   gpu?: GpuSummary
 }
 
@@ -328,6 +339,7 @@ export interface HistoryPoint {
   rx: number
   tx: number
   load: number
+  cpuTemp?: number | null
   gpu?: number | null
   gpuMem?: number | null
   gpuTemp?: number | null

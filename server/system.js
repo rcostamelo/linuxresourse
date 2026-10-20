@@ -2,6 +2,7 @@ import { promises as fsp, readFileSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import { readNetDev } from './network.js';
 import { sampleGpus } from './gpu.js';
+import { sampleCpuTemp } from './cputemp.js';
 import { SCAN_ROOT } from './config.js';
 
 const PAGE_SIZE = 4096;
@@ -19,6 +20,7 @@ let snapshot = {
   loadavg: [0, 0, 0],
   network: { rx: 0, tx: 0, perIface: {} },
   gpu: { available: false, count: 0, gpus: [], primary: null },
+  cpuTemp: { available: false, temperature: null, cores: [] },
 };
 let history = [];
 let prevTicks = new Map();
@@ -154,11 +156,12 @@ async function sample() {
   const ncpu = os.cpus().length;
   await loadUsers();
 
-  const [mem, uptimeSec, cpu, gpu] = await Promise.all([
+  const [mem, uptimeSec, cpu, gpu, cpuTemp] = await Promise.all([
     getMemory(),
     readUptime(),
     readCpuTotal(),
     sampleGpus(),
+    sampleCpuTemp(),
   ]);
 
   let cpuUsage = snapshot.cpuUsage;
@@ -217,6 +220,7 @@ async function sample() {
     loadavg: os.loadavg(),
     network: { rx: totalRx, tx: totalTx, perIface, ts: now },
     gpu,
+    cpuTemp,
     _idle: cpu ? cpu.idle : snapshot._idle,
   };
 
@@ -228,6 +232,7 @@ async function sample() {
     rx: totalRx,
     tx: totalTx,
     load: os.loadavg()[0],
+    cpuTemp: cpuTemp.temperature ?? null,
     gpu: gpu.primary?.utilization ?? null,
     gpuMem: gpu.primary?.memPct ?? null,
     gpuTemp: gpu.primary?.temperature ?? null,
@@ -272,6 +277,10 @@ function readHostHostname() {
   return os.hostname();
 }
 
+export function getCpuTemp() {
+  return snapshot.cpuTemp;
+}
+
 export function getGpu() {
   return snapshot.gpu;
 }
@@ -287,6 +296,7 @@ export function getSystem() {
     ncpu: cpus.length,
     cpuModel: cpus[0]?.model || 'CPU',
     cpuUsage: snapshot.cpuUsage,
+    cpuTemp: snapshot.cpuTemp,
     gpu: snapshot.gpu,
   };
 }

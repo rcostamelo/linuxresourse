@@ -44,6 +44,7 @@ function GaugeCard({
   color,
   sub,
   hint,
+  extra,
 }: {
   title: string
   icon: React.ReactNode
@@ -53,6 +54,7 @@ function GaugeCard({
   color?: string
   sub?: string
   hint?: string
+  extra?: React.ReactNode
 }) {
   return (
     <Card className="items-center gap-0 py-5">
@@ -62,7 +64,46 @@ function GaugeCard({
       </div>
       <Gauge value={value} unit={unit} decimals={decimals} color={color} label={sub} />
       {hint ? <div className="px-3 text-center text-[11px] text-muted-foreground">{hint}</div> : null}
+      {extra}
     </Card>
+  )
+}
+
+function Thermometer({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" />
+    </svg>
+  )
+}
+
+function tempTone(t: number, crit?: number | null) {
+  const hot = crit ? Math.min(crit - 10, 85) : 85
+  if (t >= hot) return 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+  if (t >= hot - 20) return 'border-amber-400/40 bg-amber-400/10 text-amber-300'
+  return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+}
+
+function TempBadge({ temp, crit, label }: { temp: number; crit?: number | null; label?: string | null }) {
+  return (
+    <span
+      title={label ? `Sensor ${label}` : 'Temperatura da CPU'}
+      className={cn(
+        'mt-1.5 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-[11px] tabular-nums',
+        tempTone(temp, crit),
+      )}
+    >
+      <Thermometer className="size-3" /> {temp.toFixed(0)}°C
+    </span>
   )
 }
 
@@ -97,6 +138,8 @@ export function Dashboard() {
     const hasGpuSeries = p.some((x) => x.gpu != null)
     return {
       cpu: p.map((x) => x.cpu),
+      cpuTemp: p.map((x) => x.cpuTemp ?? 0),
+      hasCpuTemp: p.some((x) => x.cpuTemp != null),
       mem: p.map((x) => x.mem),
       gpu: gpuPoints,
       hasGpuSeries,
@@ -120,6 +163,7 @@ export function Dashboard() {
   )
 
   const cpuHigh = (sys?.cpuUsage ?? 0) >= 85
+  const cpuTemp = sys?.cpuTemp?.available ? sys.cpuTemp.temperature : null
 
   return (
     <div className="space-y-4">
@@ -130,6 +174,7 @@ export function Dashboard() {
           value={sys?.cpuUsage ?? 0}
           sub={sys ? `${formatDuration(sys.uptime)} no ar` : ''}
           hint={sys ? `${sys.ncpu} núcleos · load ${sys.loadavg.map((l) => l.toFixed(1)).join(' · ')}` : '—'}
+          extra={cpuTemp != null ? <TempBadge temp={cpuTemp} crit={sys?.cpuTemp?.crit} label={sys?.cpuTemp?.label} /> : null}
         />
         <GaugeCard
           title="Memória"
@@ -216,6 +261,7 @@ export function Dashboard() {
           <CardContent>
             <div className="mb-2 flex flex-wrap items-center gap-4 text-xs">
               <Legend color={C.cpu} label="CPU" value={sys ? `${sys.cpuUsage.toFixed(1)}%` : '—'} />
+              {cpuTemp != null && <Legend color="#f97316" label="Temp. CPU" value={`${cpuTemp.toFixed(0)}°C`} />}
               <Legend color={C.mem} label="Memória" value={`${memPct.toFixed(1)}%`} />
               {hasGpu && primaryGpu?.utilization != null && (
                 <Legend color={C.gpu} label="GPU" value={`${primaryGpu.utilization.toFixed(0)}%`} />

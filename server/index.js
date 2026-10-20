@@ -3,7 +3,7 @@ import { createReadStream, existsSync } from 'node:fs';
 import { timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { handleScan, fsInfo, listDisks } from './disk.js';
-import { startSampler, getProcesses, getMemory, getSystem, getGpu, getNetworkRates, getHistory, killProcess } from './system.js';
+import { startSampler, getProcesses, getMemory, getSystem, getGpu, getCpuTemp, getNetworkRates, getHistory, killProcess } from './system.js';
 import { listTasks, runTask } from './clean.js';
 import {
   listOsUsersOverview,
@@ -244,6 +244,7 @@ function widgetMetrics() {
     hostname: sys.hostname,
     cpuModel: sys.cpuModel,
     cpuUsage: sys.cpuUsage,
+    cpuTemp: sys.cpuTemp?.temperature ?? null,
     ncpu: sys.ncpu,
     loadavg: sys.loadavg,
     uptime: sys.uptime,
@@ -353,6 +354,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (p === '/api/system') return json(res, 200, getSystem());
+    if (p === '/api/cpu-temp') return json(res, 200, getCpuTemp());
     if (p === '/api/gpu') return json(res, 200, getGpu());
     if (p === '/api/processes') return json(res, 200, getProcesses());
     if (p === '/api/memory') return json(res, 200, await getMemory());

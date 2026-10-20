@@ -29,6 +29,7 @@ import { api } from '@/lib/api'
 import type { AuthHostSummary, AuthUser } from '@/lib/api'
 import { formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { APP_VERSION } from '@/version'
 
 type Mode = 'login' | 'setup'
 
@@ -199,7 +200,7 @@ export function LoginScreen({
           />
           <span className="text-sm font-semibold tracking-tight">Linux Resource</span>
           <span className="hidden items-center gap-1 rounded border border-cyan-400/25 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wider text-cyan-300 uppercase sm:inline-flex">
-            <Terminal className="size-2.5" /> Mission Control v1.0.4
+            <Terminal className="size-2.5" /> Mission Control v{APP_VERSION}
           </span>
         </div>
 

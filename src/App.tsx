@@ -52,6 +52,7 @@ import type { AuthHostSummary, AuthUser } from '@/lib/api'
 import { usePoll } from '@/lib/usePoll'
 import { formatBytes, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { APP_VERSION } from '@/version'
 
 function shortGpuName(name: string): string {
   return (
@@ -353,7 +354,7 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
                   Linux Resource
                 </h1>
                 <span className="inline-flex items-center gap-1 rounded-md border border-cyan-400/25 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wider text-cyan-300 uppercase">
-                  <Terminal className="size-2.5" /> Mission Control
+                  <Terminal className="size-2.5" /> Mission Control v{APP_VERSION}
                 </span>
               </div>
               <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
@@ -376,7 +377,8 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
             <HeaderStat
               icon={<Cpu className="size-3.5 text-violet-400" />}
               label="CPU"
-              value={sys ? `${sys.ncpu} vCPU` : '—'}
+              value={sys ? (sys.cpuTemp?.available && sys.cpuTemp.temperature != null ? `${sys.ncpu} vCPU · ${sys.cpuTemp.temperature.toFixed(0)}°C` : `${sys.ncpu} vCPU`) : '—'}
+              title={sys?.cpuTemp?.available ? `${sys.cpuModel} · sensor ${sys.cpuTemp.label ?? sys.cpuTemp.sensor}` : sys?.cpuModel}
               progress={cpu}
               barColor="bg-gradient-to-r from-violet-500 to-cyan-400 shadow-[0_0_8px_rgba(139,92,246,0.5)]"
             />
@@ -514,6 +516,7 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-center gap-x-2 px-4 py-5 text-center font-mono text-xs text-muted-foreground sm:px-6">
           <img src="/logo-mark.png" alt="" width={20} height={20} className="size-5 object-cover" />
           <span className="font-semibold text-foreground">Linux Resource</span>
+          <span className="text-cyan-300">v{APP_VERSION}</span>
           <span className="text-cyan-500/50">//</span>
           <span>gerenciar, monitorar e otimizar</span>
           <span className="hidden text-cyan-500/50 sm:inline">//</span>
