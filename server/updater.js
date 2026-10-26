@@ -91,40 +91,39 @@ export async function detectInstallEnvironment() {
   let gitRepoDir = null;
   if (existsSync(path.join(ROOT, '.git'))) {
     gitRepoDir = ROOT;
-  } else if (IS_HOST_MOUNT) {
-    // Tenta localizar onde está o repositório git no host
+  } else if (isDockerContainer) {
+    // Busca em profundidade até 7 níveis em /home e /root (para achar o projeto em subpastas do host)
+    const scanBase = IS_HOST_MOUNT ? '/host' : '';
     const r = await execLocal('sh', [
       '-c',
-      'find /root /home -maxdepth 4 -name ".git" -type d 2>/dev/null | head -n 30',
+      `find ${scanBase}/home ${scanBase}/root -maxdepth 7 -name "package.json" 2>/dev/null | head -n 60`,
     ]);
-    for (const gitDir of r.stdout.split('\n').map((s) => s.trim()).filter(Boolean)) {
-      const parent = path.dirname(gitDir);
-      const pkgFile = path.join(parent, 'package.json');
-      if (existsSync(pkgFile)) {
-        try {
-          const pkg = JSON.parse(readFileSync(pkgFile, 'utf8'));
-          if (pkg.name === 'linux-resource') {
-            gitRepoDir = parent;
+    for (const fullPkg of r.stdout.split('\n').map((s) => s.trim()).filter(Boolean)) {
+      try {
+        const content = readFileSync(fullPkg, 'utf8');
+        if (content.includes('"name": "linux-resource"') || content.includes('"linux-resource"')) {
+          const rawDir = path.dirname(fullPkg);
+          const gitCheck = path.join(rawDir, '.git');
+          if (existsSync(gitCheck)) {
+            gitRepoDir = IS_HOST_MOUNT && rawDir.startsWith('/host') ? rawDir.slice(5) : rawDir;
             break;
           }
-        } catch {
-          /* ignore */
         }
+      } catch {
+        /* ignore */
       }
     }
   }
 
+  // Determinação precisa do modo de instalação:
+  // Se estamos executando dentro do container Docker, a atualização deste processo é SEMPRE Docker
   let installMode = 'standalone';
-  if (isDebInstalled && !isDockerContainer) {
-    installMode = 'deb';
-  } else if (isDockerContainer && gitRepoDir) {
-    installMode = 'docker-git';
-  } else if (isDockerContainer && isDebInstalled) {
+  if (isDockerContainer) {
+    installMode = gitRepoDir ? 'docker-git' : (isDebInstalled ? 'deb' : 'docker-git');
+  } else if (isDebInstalled) {
     installMode = 'deb';
   } else if (gitRepoDir) {
     installMode = 'git';
-  } else if (isDebInstalled) {
-    installMode = 'deb';
   }
 
   // Detecta Desktop Environment no host (KDE Plasma vs GNOME vs Headless Server)
@@ -317,7 +316,32 @@ export async function triggerSystemUpdate(input = {}, actor = {}) {
   (async () => {
     const start = Date.now();
     try {
-      if (env.installMode === 'deb' || (!env.gitRepoDir && targetRelease.debAsset)) {
+      if (env.installMode === 'docker-git' || (env.isDockerContainer && env.gitRepoDir)) {
+        const repoDir = env.gitRepoDir;
+        updateJob.step = 'Sincronizando repositório Git (fetch & reset)...';
+        appendJobLog(`Atualizando repositório em ${repoDir}...`);
+
+        const cmd = `
+          set -e
+          cd ${shQuote(repoDir)}
+          git fetch origin --tags
+          git reset --hard origin/main
+          if [ -x scripts/linux-resource-desktop-setup.sh ]; then
+            ./scripts/linux-resource-desktop-setup.sh || true
+          fi
+          docker compose up -d --build
+        `;
+        updateJob.step = 'Reconstruindo container Docker e atualizando widgets...';
+        appendJobLog('Executando git reset --hard origin/main && docker compose up -d --build...');
+        const r = await execHostSudo(cmd, { timeout: 180000 });
+        if (r.error === 'requires_sudo_password') {
+          throw new Error('Configure a senha no Cofre Sudo para atualizar o repositório e container no host.');
+        }
+        if (r.code !== 0) {
+          throw new Error((r.stderr || r.stdout || r.error || 'Falha ao atualizar via Git/Docker').trim());
+        }
+        if (r.stdout.trim()) appendJobLog(r.stdout.trim().slice(-800));
+      } else if (env.installMode === 'deb' || targetRelease.debAsset) {
         const debUrl = targetRelease.debAsset?.downloadUrl;
         if (!debUrl) {
           throw new Error(`A release v${targetRelease.version} não possui arquivo .deb anexado.`);
@@ -347,29 +371,7 @@ export async function triggerSystemUpdate(input = {}, actor = {}) {
         const repoDir = env.gitRepoDir;
         updateJob.step = 'Sincronizando repositório Git (fetch & reset)...';
         appendJobLog(`Atualizando repositório em ${repoDir}...`);
-
-        if (env.installMode === 'docker-git') {
-          const cmd = `
-            set -e
-            cd ${shQuote(repoDir)}
-            git fetch origin --tags
-            git reset --hard origin/main
-            if [ -x scripts/linux-resource-desktop-setup.sh ]; then
-              ./scripts/linux-resource-desktop-setup.sh || true
-            fi
-            docker compose up -d --build
-          `;
-          updateJob.step = 'Reconstruindo container Docker e atualizando widgets...';
-          appendJobLog('Executando git reset --hard origin/main && docker compose up -d --build...');
-          const r = await execHostSudo(cmd, { timeout: 180000 });
-          if (r.error === 'requires_sudo_password') {
-            throw new Error('Configure a senha no Cofre Sudo para atualizar o repositório e container no host.');
-          }
-          if (r.code !== 0) {
-            throw new Error((r.stderr || r.stdout || r.error || 'Falha ao atualizar via Git/Docker').trim());
-          }
-          if (r.stdout.trim()) appendJobLog(r.stdout.trim().slice(-800));
-        } else {
+        if (true) {
           const cmd = `
             set -e
             cd ${shQuote(repoDir)}
