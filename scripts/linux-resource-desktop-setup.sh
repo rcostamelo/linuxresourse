@@ -9,8 +9,46 @@ KDE_ID="org.linuxresource.widget"
 DE="$(printf '%s %s %s' "${XDG_CURRENT_DESKTOP:-}" "${DESKTOP_SESSION:-}" "${XDG_SESSION_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')"
 
 setup_gnome() {
+  local system_ext="/usr/share/gnome-shell/extensions/${GNOME_UUID}"
+  local user_ext="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/${GNOME_UUID}"
+  local version_file=".linux-resource-package-version"
+
+  # Uma instalação anterior por usuário tem prioridade sobre /usr/share.
+  # Atualize-a uma vez por versão e guarde uma cópia antes de substituí-la.
+  if [ -d "$user_ext" ] && [ -f "$system_ext/$version_file" ] && \
+     ! cmp -s "$system_ext/$version_file" "$user_ext/$version_file"; then
+    if ! cmp -s "$system_ext/extension.js" "$user_ext/extension.js" || \
+       ! cmp -s "$system_ext/metadata.json" "$user_ext/metadata.json"; then
+      local backup_root="${XDG_DATA_HOME:-$HOME/.local/share}/linux-resource/gnome-widget-backups"
+      local backup_dir
+      mkdir -p "$backup_root"
+      backup_dir="$(mktemp -d "$backup_root/widget-XXXXXXXX")"
+      cp -a "$user_ext" "$backup_dir/extension"
+      install -m 0644 "$system_ext/extension.js" "$user_ext/extension.js"
+      install -m 0644 "$system_ext/metadata.json" "$user_ext/metadata.json"
+      echo "Widget anterior preservado em: $backup_dir/extension"
+      echo "Saia e entre novamente na sessão para carregar o widget atualizado."
+    fi
+    install -m 0644 "$system_ext/$version_file" "$user_ext/$version_file"
+  fi
+
   if command -v gnome-extensions >/dev/null 2>&1; then
     gnome-extensions enable "$GNOME_UUID" >/dev/null 2>&1 || true
+
+    # O tray Qt/Ayatana aparece no GNOME por meio da extensão AppIndicator.
+    # Preserve a extensão já ativa; se não houver uma, habilite só uma cópia.
+    local ext_root ext_dir ext_uuid
+    if ! gnome-extensions list --enabled 2>/dev/null | grep -qi appindicator; then
+      for ext_root in "/usr/share/gnome-shell/extensions" "${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions"; do
+        for ext_dir in "$ext_root"/*appindicator*; do
+          [ -d "$ext_dir" ] || continue
+          ext_uuid="${ext_dir##*/}"
+          if gnome-extensions enable "$ext_uuid" >/dev/null 2>&1; then
+            break 2
+          fi
+        done
+      done
+    fi
   fi
 }
 

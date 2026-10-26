@@ -101,12 +101,30 @@ def open_browser(tab=""):
 def restart_service():
     """Reinicia o serviço conforme o modo de instalação (.deb/systemd ou Docker)."""
     try:
-        units = subprocess.run(["systemctl", "list-unit-files", "linux-resource.service"], capture_output=True, text=True, timeout=5).stdout
-        if "linux-resource.service" in units:
-            cmd = ["pkexec", "systemctl", "restart", "linux-resource.service"]
-        else:
-            cmd = ["docker", "restart", "linux-resource"]
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        if shutil.which("docker"):
+            result = subprocess.run(
+                ["docker", "ps", "--filter", "label=com.docker.compose.service=linux-resource", "--format", "{{.Names}}"],
+                capture_output=True, text=True, timeout=5,
+            )
+            names = result.stdout.splitlines() if result.returncode == 0 else []
+            if not names:
+                for name in ("linux-resource", "linux-resource-host"):
+                    inspected = subprocess.run(
+                        ["docker", "inspect", "--format", "{{.State.Running}}", name],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if inspected.returncode == 0 and inspected.stdout.strip() == "true":
+                        names = [name]
+                        break
+            if names:
+                subprocess.Popen(["docker", "restart", names[0]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                return
+
+        # Não inicie o serviço do pacote quando ele foi desabilitado porque o
+        # backend está em Docker, inclusive se o daemon estiver inacessível.
+        enabled = subprocess.run(["systemctl", "is-enabled", "--quiet", "linux-resource.service"], timeout=5)
+        if enabled.returncode == 0:
+            subprocess.Popen(["pkexec", "systemctl", "restart", "linux-resource.service"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     except (OSError, subprocess.SubprocessError):
         pass
 

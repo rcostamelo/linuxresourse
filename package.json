@@ -1,7 +1,7 @@
 {
   "name": "linux-resource",
   "private": true,
-  "version": "1.0.9",
+  "version": "1.0.10",
   "type": "module",
   "description": "Painel de gerenciamento e monitoramento para desktops e servidores Linux",
   "license": "MIT",

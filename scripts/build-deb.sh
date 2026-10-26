@@ -46,6 +46,7 @@ cp "$ROOT_DIR/package.json" "$STAGE_DIR/opt/$PKG_NAME/package.json"
 # 1. Widget para GNOME Shell (instalado em /usr/share/gnome-shell/extensions)
 WIDGET_UUID="linux-resource-widget@linuxresource.local"
 cp -r "$ROOT_DIR/widget/gnome-extension/$WIDGET_UUID" "$STAGE_DIR/usr/share/gnome-shell/extensions/$WIDGET_UUID"
+printf '%s\n' "$VERSION" > "$STAGE_DIR/usr/share/gnome-shell/extensions/$WIDGET_UUID/.linux-resource-package-version"
 
 # 2. Widget para KDE Plasma (Plasmoid instalado em /usr/share/plasma/plasmoids)
 KDE_PLASMOID_ID="org.linuxresource.widget"
@@ -232,7 +233,6 @@ Exec=xdg-open http://127.0.0.1:10450
 Name=Ativar Widget na Barra (GNOME / KDE)
 Exec=/usr/bin/linux-resource-desktop-setup
 EOF
-ln -sf org.linuxresource.app.desktop "$STAGE_DIR/usr/share/applications/$PKG_NAME.desktop"
 
 # Autostart XDG universal: detecta se o login gráfico é GNOME ou KDE Plasma e ativa o widget correspondente
 cat > "$STAGE_DIR/etc/xdg/autostart/$PKG_NAME-widget.desktop" <<'EOF'
@@ -272,7 +272,7 @@ Priority: optional
 Architecture: $ARCH
 Installed-Size: $INSTALLED_SIZE
 Depends: coreutils, iputils-ping, openssh-client
-Recommends: nodejs (>= 22.5.0), docker.io | docker-ce | docker-ce-cli, nginx, sshpass, pciutils, python3-pyqt6 | python3-pyqt5 | gir1.2-ayatanaappindicator3-0.1
+Recommends: nodejs (>= 22.5.0), docker.io | docker-ce | docker-ce-cli, nginx, sshpass, pciutils, python3-pyqt6 | python3-pyqt5 | gir1.2-ayatanaappindicator3-0.1, gnome-shell-extension-appindicator
 Suggests: python3-gi, gir1.2-webkit-6.0 | gir1.2-webkit2-4.1, gnome-shell, plasma-workspace
 Maintainer: Raony <rcostamelo@gmail.com>
 Homepage: https://github.com/rcostamelo/linuxresourse
@@ -313,10 +313,33 @@ chmod 0700 /var/lib/linux-resource
 # Endpoint do widget é somente local (loopback), sem token. Remove resíduos de versões antigas.
 rm -f /etc/linux-resource/widget.env /etc/linux-resource/widget-token
 
+docker_backend_running() {
+  command -v docker >/dev/null 2>&1 || return 1
+
+  # O compose deste projeto usa o serviço "linux-resource" tanto no modo
+  # padrão quanto no modo host. Se já houver um container ativo, o .deb fica
+  # responsável apenas pela integração desktop e não inicia outro backend.
+  if docker ps --filter 'label=com.docker.compose.service=linux-resource' --format '{{.ID}}' 2>/dev/null | grep -q .; then
+    return 0
+  fi
+
+  for name in linux-resource linux-resource-host; do
+    if docker inspect --format '{{.State.Running}}' "$name" 2>/dev/null | grep -qx true; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
   systemctl daemon-reload >/dev/null 2>&1 || true
-  systemctl enable linux-resource.service >/dev/null 2>&1 || true
-  systemctl restart linux-resource.service >/dev/null 2>&1 || true
+  if docker_backend_running; then
+    systemctl disable --now linux-resource.service >/dev/null 2>&1 || true
+    echo "Container Linux Resource ativo: mantendo o backend Docker e não iniciando o serviço do .deb."
+  else
+    systemctl enable linux-resource.service >/dev/null 2>&1 || true
+    systemctl restart linux-resource.service >/dev/null 2>&1 || true
+  fi
 fi
 
 echo ""
