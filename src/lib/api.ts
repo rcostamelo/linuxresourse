@@ -1018,12 +1018,34 @@ export interface SystemAboutOverview {
 
 export const api = {
   authStatus: () => getJson<AuthStatus>('/api/auth/status'),
-  authSetup: (username: string, password: string) =>
-    postJson<{ ok: boolean; user: AuthUser }>('/api/auth/setup', { username, password }),
-  authLogin: (username: string, password: string) =>
-    postJson<{ ok: boolean; user: AuthUser }>('/api/auth/login', { username, password }),
+  authSetup: (
+    username: string,
+    password: string,
+    options?: { rememberMe?: boolean; ttlDays?: number }
+  ) =>
+    postJson<{ ok: boolean; user: AuthUser }>('/api/auth/setup', {
+      username,
+      password,
+      rememberMe: options?.rememberMe,
+      ttlDays: options?.ttlDays,
+    }),
+  authLogin: (
+    username: string,
+    password: string,
+    options?: { rememberMe?: boolean; ttlDays?: number }
+  ) =>
+    postJson<{ ok: boolean; user: AuthUser }>('/api/auth/login', {
+      username,
+      password,
+      rememberMe: options?.rememberMe,
+      ttlDays: options?.ttlDays,
+    }),
   authLogout: () => postJson<{ ok: boolean }>('/api/auth/logout'),
   authMe: () => getJson<{ user: AuthUser; sessionExpiresAt: number }>('/api/auth/me'),
+  authExtendSession: (input: { ttlDays: number }) =>
+    postJson<{ ok: boolean; sessionExpiresAt: number; ttlDays: number }>('/api/auth/session/extend', input),
+  authKeepAlive: () =>
+    getJson<{ ok: boolean; user: AuthUser; sessionExpiresAt: number }>('/api/auth/session/keepalive'),
   authChangePassword: (currentPassword: string, newPassword: string) =>
     postJson<{ ok: boolean }>('/api/auth/password', { currentPassword, newPassword }),
   panelUsersOverview: () => getJson<PanelUsersOverview>('/api/auth/users'),

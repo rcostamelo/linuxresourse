@@ -13,7 +13,7 @@
     "Id": "org.linuxresource.widget",
     "License": "MIT",
     "Name": "Linux Resource Widget",
-    "Version": "1.0.8",
+    "Version": "1.0.9",
     "Website": "https://github.com/rcostamelo/linuxresourse"
   },
   "X-Plasma-API": "declarativeappletscript",

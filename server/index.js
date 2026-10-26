@@ -170,14 +170,37 @@ async function handleAuth(req, res, p, url) {
 
   if (p === '/api/auth/setup' && req.method === 'POST') {
     const body = await readJson(req);
-    const user = auth.setupAdmin(body.username, body.password, req, res);
+    const user = auth.setupAdmin(body.username, body.password, req, res, {
+      rememberMe: body.rememberMe,
+      ttlDays: body.ttlDays,
+    });
     return json(res, 201, { ok: true, user });
   }
 
   if (p === '/api/auth/login' && req.method === 'POST') {
     const body = await readJson(req);
-    const user = auth.login(body.username, body.password, req, res);
+    const user = auth.login(body.username, body.password, req, res, {
+      rememberMe: body.rememberMe,
+      ttlDays: body.ttlDays,
+    });
     return json(res, 200, { ok: true, user });
+  }
+
+  if (p === '/api/auth/session/extend' && req.method === 'POST') {
+    const session = auth.sessionFromRequest(req, res);
+    if (!session) return json(res, 401, { error: 'não autenticado' });
+    const body = await readJson(req);
+    return json(res, 200, auth.extendSession(session, req, res, body));
+  }
+
+  if (p === '/api/auth/session/keepalive' && (req.method === 'GET' || req.method === 'POST')) {
+    const session = auth.sessionFromRequest(req, res);
+    if (!session) return json(res, 401, { error: 'não autenticado' });
+    return json(res, 200, {
+      ok: true,
+      user: session.user,
+      sessionExpiresAt: session.expiresAt,
+    });
   }
 
   if (p === '/api/auth/logout' && req.method === 'POST') {
@@ -186,13 +209,13 @@ async function handleAuth(req, res, p, url) {
   }
 
   if (p === '/api/auth/me') {
-    const session = auth.sessionFromRequest(req);
+    const session = auth.sessionFromRequest(req, res);
     if (!session) return json(res, 401, { error: 'não autenticado' });
     return json(res, 200, { user: session.user, sessionExpiresAt: session.expiresAt });
   }
 
   if (p === '/api/auth/password' && req.method === 'POST') {
-    const session = auth.sessionFromRequest(req);
+    const session = auth.sessionFromRequest(req, res);
     if (!session) return json(res, 401, { error: 'não autenticado' });
     const body = await readJson(req);
     auth.changePassword(session, body.currentPassword, body.newPassword);
@@ -200,34 +223,34 @@ async function handleAuth(req, res, p, url) {
   }
 
   if (p === '/api/auth/users' && req.method === 'GET') {
-    const session = auth.sessionFromRequest(req);
+    const session = auth.sessionFromRequest(req, res);
     if (!session) return json(res, 401, { error: 'não autenticado' });
     return json(res, 200, auth.panelUsersOverview(session));
   }
 
   if (p === '/api/auth/users/create' && req.method === 'POST') {
-    const session = auth.sessionFromRequest(req);
+    const session = auth.sessionFromRequest(req, res);
     if (!session) return json(res, 401, { error: 'não autenticado' });
     const body = await readJson(req);
     return json(res, 201, auth.adminCreatePanelUser(session, body));
   }
 
   if (p === '/api/auth/users/update' && req.method === 'POST') {
-    const session = auth.sessionFromRequest(req);
+    const session = auth.sessionFromRequest(req, res);
     if (!session) return json(res, 401, { error: 'não autenticado' });
     const body = await readJson(req);
     return json(res, 200, auth.adminUpdatePanelUser(session, body));
   }
 
   if (p === '/api/auth/users/delete' && req.method === 'POST') {
-    const session = auth.sessionFromRequest(req);
+    const session = auth.sessionFromRequest(req, res);
     if (!session) return json(res, 401, { error: 'não autenticado' });
     const body = await readJson(req);
     return json(res, 200, auth.adminDeletePanelUser(session, body));
   }
 
   if (p === '/api/auth/sessions/revoke' && req.method === 'POST') {
-    const session = auth.sessionFromRequest(req);
+    const session = auth.sessionFromRequest(req, res);
     if (!session) return json(res, 401, { error: 'não autenticado' });
     const body = await readJson(req);
     return json(res, 200, auth.revokePanelSession(session, body));
@@ -433,7 +456,7 @@ const server = createServer(async (req, res) => {
 
     if (p.startsWith('/api/')) {
       if (!PUBLIC_API.has(p)) {
-        const session = auth.sessionFromRequest(req);
+        const session = auth.sessionFromRequest(req, res);
         if (!session) return json(res, 401, { error: 'não autenticado' });
         if (req.method === 'POST' && session.user.role === 'viewer') {
           return json(res, 403, { error: 'Conta somente leitura (viewer). Apenas administradores podem executar ações.' });

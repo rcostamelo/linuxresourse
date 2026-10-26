@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Sparkles,
   Terminal,
+  Timer,
   User,
   Zap,
 } from '@/components/ui/lucide-animated'
@@ -55,6 +56,7 @@ import { OsUsersPanel } from '@/components/OsUsersPanel'
 import { SystemUpdatePanel } from '@/components/SystemUpdatePanel'
 import { LoginScreen } from '@/components/LoginScreen'
 import { PanelUsersModal } from '@/components/PanelUsersModal'
+import { SessionHoldModal, KEEP_ALIVE_STORAGE_KEY } from '@/components/SessionHoldModal'
 import { api, UNAUTHORIZED_EVENT } from '@/lib/api'
 import type { AuthHostSummary, AuthUser } from '@/lib/api'
 import { ThemeProvider, ThemeSwitcher, useTheme } from '@/lib/theme'
@@ -165,7 +167,29 @@ function Splash() {
   )
 }
 
-function UserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+function formatRemaining(expiresAt: number | null): string {
+  if (!expiresAt) return 'temporária'
+  const diff = expiresAt - Date.now()
+  if (diff <= 0) return 'expirada'
+  const days = Math.floor(diff / (24 * 60 * 60 * 1000))
+  if (days >= 300) return 'permanente'
+  if (days > 0) return `${days}d`
+  const hours = Math.floor(diff / (60 * 60 * 1000))
+  return `${hours}h`
+}
+
+function UserMenu({
+  user,
+  sessionExpiresAt,
+  onSessionUpdated,
+  onLogout,
+}: {
+  user: AuthUser
+  sessionExpiresAt: number | null
+  onSessionUpdated: (expiresAt: number) => void
+  onLogout: () => void
+}) {
+  const [sessionHoldOpen, setSessionHoldOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [panelUsersOpen, setPanelUsersOpen] = useState(false)
   const [open, setOpen] = useState(false)
@@ -236,10 +260,29 @@ function UserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => void }) 
         {menuOpen && (
           <div className="absolute right-0 top-full z-50 mt-1.5 w-48 overflow-hidden rounded-xl border border-cyan-500/30 bg-popover p-1 shadow-[0_18px_50px_rgba(0,0,0,0.8)]">
             <div className="border-b border-border px-2.5 py-2">
-              <div className="font-mono text-xs font-semibold text-foreground">{user.username}</div>
-              <div className="font-mono text-[10px] tracking-wider text-cyan-400/80 uppercase">{user.role || 'admin'}</div>
+              <div className="flex items-center justify-between gap-1">
+                <span className="font-mono text-xs font-semibold text-foreground">@{user.username}</span>
+                <span className="rounded bg-cyan-500/15 px-1 py-0.2 font-mono text-[9px] font-semibold text-cyan-300 uppercase">
+                  {user.role || 'admin'}
+                </span>
+              </div>
+              <div className="mt-1 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+                <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
+                <span>Sessão: {formatRemaining(sessionExpiresAt)}</span>
+              </div>
             </div>
             <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false)
+                  setSessionHoldOpen(true)
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-cyan-500/15 hover:text-cyan-200"
+              >
+                <Timer className="size-3.5 text-cyan-400" />
+                <span>Segurar sessão / Duração</span>
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -279,6 +322,13 @@ function UserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => void }) 
       </div>
 
       <PanelUsersModal open={panelUsersOpen} onOpenChange={setPanelUsersOpen} currentUser={user} />
+      <SessionHoldModal
+        open={sessionHoldOpen}
+        onOpenChange={setSessionHoldOpen}
+        currentUser={user}
+        sessionExpiresAt={sessionExpiresAt}
+        onSessionUpdated={onSessionUpdated}
+      />
 
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>
@@ -610,9 +660,33 @@ function tabFromHash(): string {
   return VALID_TABS.has(h) ? h : 'dashboard'
 }
 
-function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+function Console({
+  user,
+  sessionExpiresAt,
+  onSessionUpdated,
+  onLogout,
+}: {
+  user: AuthUser
+  sessionExpiresAt: number | null
+  onSessionUpdated: (expiresAt: number) => void
+  onLogout: () => void
+}) {
   const { data: sys } = usePoll(api.system, 2000)
   const { data: mem } = usePoll(api.memory, 2000)
+
+  useEffect(() => {
+    // Keep-alive silencioso: renova o cookie no servidor a cada 5 minutos se ativado
+    const id = setInterval(() => {
+      try {
+        if (localStorage.getItem(KEEP_ALIVE_STORAGE_KEY) !== 'false') {
+          api.authKeepAlive().then((res) => {
+            if (res?.sessionExpiresAt) onSessionUpdated(res.sessionExpiresAt)
+          }).catch(() => {})
+        }
+      } catch {}
+    }, 5 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [onSessionUpdated])
   const { data: about } = usePoll(api.systemUpdateOverview, 30 * 60 * 1000)
   const [activeTab, setActiveTabState] = useState(tabFromHash)
   const [dismissedUpdateVer, setDismissedUpdateVer] = useState<string | null>(() => {
@@ -757,7 +831,7 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               {sys ? 'ONLINE' : 'SYNC'}
             </Badge>
             <ThemeSwitcher />
-            <UserMenu user={user} onLogout={onLogout} />
+            <UserMenu user={user} sessionExpiresAt={sessionExpiresAt} onSessionUpdated={onSessionUpdated} onLogout={onLogout} />
           </div>
         </div>
       </header>
@@ -892,6 +966,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [setup, setSetup] = useState(false)
   const [user, setUser] = useState<AuthUser | null>(null)
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null)
   const [hostInfo, setHostInfo] = useState<AuthHostSummary | null>(null)
 
   useEffect(() => {
@@ -902,6 +977,7 @@ export default function App() {
         if (!alive) return
         setSetup(s.setup)
         setUser(s.authenticated ? s.user : null)
+        setSessionExpiresAt(s.sessionExpiresAt)
         if (s.host) setHostInfo(s.host)
       })
       .catch(() => {
@@ -937,7 +1013,7 @@ export default function App() {
         {loading ? (
           <Splash />
         ) : user ? (
-          <Console user={user} onLogout={logout} />
+          <Console user={user} sessionExpiresAt={sessionExpiresAt} onSessionUpdated={setSessionExpiresAt} onLogout={logout} />
         ) : (
           <LoginScreen
             mode={setup ? 'setup' : 'login'}

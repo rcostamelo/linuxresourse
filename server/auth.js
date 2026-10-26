@@ -105,24 +105,40 @@ export function clientIp(req) {
 
 /* -------------------------------- sessions ------------------------------- */
 
-export function sessionFromRequest(req) {
+export function sessionFromRequest(req, res = null) {
   const token = parseCookies(req.headers.cookie)[COOKIE_NAME];
   if (!token) return null;
   const tokenHash = sha256(token);
   const session = db.getSession(tokenHash);
   if (!session) return null;
-  if (session.expiresAt - Date.now() < SESSION_MS / 2) {
-    const expiresAt = Date.now() + SESSION_MS;
+  const remaining = session.expiresAt - Date.now();
+  // Se a sessão estiver com menos de 3 dias restantes ou menos de metade do tempo padrão,
+  // renova no banco e também atualiza o Set-Cookie no navegador (sliding session).
+  if (remaining < 3 * 24 * 60 * 60 * 1000 || remaining < SESSION_MS / 2) {
+    const renewDays = Math.max(SESSION_TTL_DAYS, Math.ceil(remaining / (24 * 60 * 60 * 1000)));
+    const renewMs = renewDays * 24 * 60 * 60 * 1000;
+    const expiresAt = Date.now() + renewMs;
     db.touchSession(tokenHash, expiresAt);
     session.expiresAt = expiresAt;
+    if (res) {
+      appendSetCookie(res, cookieString(req, token, Math.floor(renewMs / 1000)));
+    }
   }
   return { ...session, token };
 }
 
-function startSession(userId, req, res) {
+function computeTtlMs({ ttlDays, rememberMe } = {}) {
+  const days = ttlDays
+    ? Math.max(1, Math.min(365, Number(ttlDays) || 7))
+    : (rememberMe ? 30 : SESSION_TTL_DAYS);
+  return { days, ms: days * 24 * 60 * 60 * 1000 };
+}
+
+function startSession(userId, req, res, options = {}) {
   const token = crypto.randomBytes(32).toString('base64url');
   const tokenHash = sha256(token);
-  const expiresAt = Date.now() + SESSION_MS;
+  const { days, ms } = computeTtlMs(options);
+  const expiresAt = Date.now() + ms;
   db.createSession({
     tokenHash,
     userId,
@@ -130,8 +146,8 @@ function startSession(userId, req, res) {
     ip: clientIp(req),
     userAgent: req.headers['user-agent'] || null,
   });
-  appendSetCookie(res, cookieString(req, token, Math.floor(SESSION_MS / 1000)));
-  return { token, tokenHash, expiresAt };
+  appendSetCookie(res, cookieString(req, token, Math.floor(ms / 1000)));
+  return { token, tokenHash, expiresAt, ttlDays: days };
 }
 
 /* ------------------------------ rate limiting ---------------------------- */
@@ -206,14 +222,14 @@ export function createAccount(username, password, role = 'admin') {
   return db.createUser({ username: String(username).trim(), passwordHash: hashPassword(password), role });
 }
 
-export function setupAdmin(username, password, req, res) {
+export function setupAdmin(username, password, req, res, options = {}) {
   if (!isSetupNeeded()) throw httpError(409, 'já existe um usuário cadastrado');
   const user = createAccount(username, password, 'admin');
-  startSession(user.id, req, res);
+  startSession(user.id, req, res, options);
   return user;
 }
 
-export function login(username, password, req, res) {
+export function login(username, password, req, res, options = {}) {
   const ip = clientIp(req);
   const blocked = loginBlockedSeconds(ip);
   if (blocked) throw httpError(429, `muitas tentativas. tente novamente em ${blocked}s`);
@@ -227,8 +243,24 @@ export function login(username, password, req, res) {
   }
   resetLoginFailures(ip);
   db.recordLogin(row.id);
-  startSession(row.id, req, res);
+  startSession(row.id, req, res, options);
   return db.publicUser(db.findUserById(row.id));
+}
+
+
+export function extendSession(session, req, res, { ttlDays = 30 } = {}) {
+  if (!session?.tokenHash) throw httpError(401, 'não autenticado');
+  const days = Math.max(1, Math.min(365, Number(ttlDays) || 30));
+  const ms = days * 24 * 60 * 60 * 1000;
+  const expiresAt = Date.now() + ms;
+  db.touchSession(session.tokenHash, expiresAt);
+  appendSetCookie(res, cookieString(req, session.token, Math.floor(ms / 1000)));
+  return {
+    ok: true,
+    sessionExpiresAt: expiresAt,
+    ttlDays: days,
+    expiresAtDate: new Date(expiresAt).toISOString(),
+  };
 }
 
 export function logout(req, res) {

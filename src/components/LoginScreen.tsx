@@ -96,6 +96,7 @@ export function LoginScreen({
   const [capsLock, setCapsLock] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [rememberSession, setRememberSession] = useState(true)
   const [host, setHost] = useState<AuthHostSummary | null>(initialHost ?? null)
 
   const isSetup = mode === 'setup'
@@ -164,8 +165,8 @@ export function LoginScreen({
     setLoading(true)
     try {
       const r = isSetup
-        ? await api.authSetup(cleanUser, password)
-        : await api.authLogin(cleanUser, password)
+        ? await api.authSetup(cleanUser, password, { rememberMe: rememberSession })
+        : await api.authLogin(cleanUser, password, { rememberMe: rememberSession })
       try {
         localStorage.setItem(REMEMBER_USER_KEY, cleanUser)
       } catch {
@@ -373,6 +374,18 @@ export function LoginScreen({
                     {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </button>
                 </Field>
+
+                <div className="flex items-center justify-between pt-0.5">
+                  <label className="flex cursor-pointer items-center gap-2 select-none text-xs text-muted-foreground hover:text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={rememberSession}
+                      onChange={(e) => setRememberSession(e.target.checked)}
+                      className="size-3.5 rounded border border-cyan-500/40 bg-card text-cyan-400 accent-cyan-500 focus:ring-1 focus:ring-cyan-400"
+                    />
+                    <span>Manter conectado (segurar sessão por 30 dias)</span>
+                  </label>
+                </div>
 
                 {isSetup && (
                   <>
