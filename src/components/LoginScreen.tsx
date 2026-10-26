@@ -81,7 +81,7 @@ export function LoginScreen({
 }: {
   mode: Mode
   host?: AuthHostSummary | null
-  onSuccess: (user: AuthUser) => void
+  onSuccess: (user: AuthUser, sessionExpiresAt?: number | null) => void
 }) {
   const [username, setUsername] = useState(() => {
     try {
@@ -172,7 +172,7 @@ export function LoginScreen({
       } catch {
         /* ignore storage errors */
       }
-      onSuccess(r.user)
+      onSuccess(r.user, r.sessionExpiresAt ?? null)
     } catch (err) {
       setError(String((err as Error).message || err))
     } finally {
@@ -182,15 +182,8 @@ export function LoginScreen({
 
   return (
     <div className="relative flex min-h-dvh flex-col justify-between overflow-hidden bg-background px-4 py-6 sm:px-6 lg:px-10">
-      {/* Ambient Cyber-Telemetry Glows */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 left-1/4 size-[560px] -translate-x-1/2 rounded-full bg-cyan-500/12 blur-[140px]" />
-        <div className="absolute -bottom-44 left-10 size-[460px] rounded-full bg-emerald-500/10 blur-[130px]" />
-        <div className="absolute top-1/4 -right-24 size-[480px] rounded-full bg-violet-600/12 blur-[140px]" />
-      </div>
-
       {/* Top Telemetry Status Bar */}
-      <header className="relative z-10 mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-500/15 bg-card/65 px-4 py-2.5 backdrop-blur-xl">
+      <header className="relative z-10 mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-500/15 bg-card/90 px-4 py-2.5">
         <div className="flex items-center gap-2.5">
           <img
             src="/logo-mark.png"
@@ -237,7 +230,7 @@ export function LoginScreen({
             variant="outline"
             className="h-6 gap-1.5 border-emerald-500/30 bg-emerald-500/10 px-2 font-mono text-[10px] text-emerald-300"
           >
-            <span className="size-1.5 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+            <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
             TELEMETRIA ONLINE
           </Badge>
         </div>
@@ -280,7 +273,7 @@ export function LoginScreen({
               return (
                 <div
                   key={m.title}
-                  className="group flex items-start gap-3 rounded-xl border border-cyan-500/12 bg-card/55 p-3 backdrop-blur-md transition-colors hover:border-cyan-400/30 hover:bg-card/80"
+                  className="group flex items-start gap-3 rounded-xl border border-cyan-500/12 bg-card/80 p-3 transition-colors hover:border-cyan-400/30 hover:bg-card/90"
                 >
                   <div className={cn('grid size-8 shrink-0 place-items-center rounded-lg ring-1', m.color)}>
                     <Icon className="size-4" />
@@ -297,7 +290,7 @@ export function LoginScreen({
 
         {/* Right Column: Authentication Card */}
         <div className="order-1 w-full max-w-md justify-self-center lg:order-2 lg:max-w-none">
-          <Card className="relative overflow-hidden border-cyan-500/25 bg-card/80 shadow-[0_20px_60px_rgba(0,0,0,0.6)] backdrop-blur-xl before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-cyan-400/60 before:to-transparent">
+          <Card className="relative overflow-hidden border-cyan-500/25 bg-card/95 shadow-[0_20px_60px_rgba(0,0,0,0.6)] before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-cyan-400/60 before:to-transparent">
             <CardContent className="p-6 sm:p-7">
               <div className="mb-6 flex items-center gap-3.5">
                 <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-cyan-500/15 text-cyan-300 ring-1 ring-cyan-400/30 shadow-[0_0_20px_rgba(34,211,238,0.15)]">
@@ -381,7 +374,7 @@ export function LoginScreen({
                       type="checkbox"
                       checked={rememberSession}
                       onChange={(e) => setRememberSession(e.target.checked)}
-                      className="size-3.5 rounded border border-cyan-500/40 bg-card text-cyan-400 accent-cyan-500 focus:ring-1 focus:ring-cyan-400"
+                      className="size-3.5 rounded border border-cyan-500/40 bg-card text-cyan-500 accent-cyan-500 focus:ring-1 focus:ring-cyan-400"
                     />
                     <span>Manter conectado (segurar sessão por 30 dias)</span>
                   </label>

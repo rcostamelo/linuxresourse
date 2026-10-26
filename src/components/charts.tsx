@@ -46,13 +46,6 @@ export function Gauge({
             <stop offset="0%" stopColor={col} stopOpacity="0.65" />
             <stop offset="100%" stopColor={col} />
           </linearGradient>
-          <filter id={`glow-${id}`} x="-25%" y="-25%" width="150%" height="150%">
-            <feGaussianBlur stdDeviation="2.5" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
         </defs>
         <circle
           cx={size / 2}
@@ -74,7 +67,6 @@ export function Gauge({
           strokeWidth={thickness}
           strokeLinecap="round"
           strokeDasharray={`${c * sweep * pct} ${c}`}
-          filter={`url(#glow-${id})`}
           style={{ transition: 'stroke-dasharray .5s ease' }}
         />
       </svg>
@@ -164,7 +156,6 @@ export function AreaSeries({
                   vectorEffect="non-scaling-stroke"
                   strokeLinejoin="round"
                   strokeLinecap="round"
-                  style={{ filter: `drop-shadow(0 0 6px ${s.color}66)` }}
                 />
               )}
             </g>

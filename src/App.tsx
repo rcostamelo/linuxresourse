@@ -103,7 +103,7 @@ function HeaderStat({
     <div
       title={title}
       className={cn(
-        'relative flex min-w-[88px] shrink-0 flex-col justify-between gap-1 overflow-hidden rounded-lg border bg-card/75 px-2.5 py-1 backdrop-blur-md transition-colors',
+        'relative flex min-w-[88px] shrink-0 flex-col justify-between gap-1 overflow-hidden rounded-lg border bg-card/90 px-2.5 py-1 transition-colors',
         isCritical ? 'border-rose-500/40 bg-rose-950/20' : 'border-cyan-500/15 hover:border-cyan-400/30',
       )}
     >
@@ -168,7 +168,7 @@ function Splash() {
 }
 
 function formatRemaining(expiresAt: number | null): string {
-  if (!expiresAt) return 'temporária'
+  if (!expiresAt) return 'ativa'
   const diff = expiresAt - Date.now()
   if (diff <= 0) return 'expirada'
   const days = Math.floor(diff / (24 * 60 * 60 * 1000))
@@ -244,7 +244,7 @@ function UserMenu({
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
           className={cn(
-            'flex items-center gap-1.5 rounded-lg border bg-card/75 px-2.5 py-1.5 font-mono text-xs backdrop-blur-md transition-colors',
+            'flex items-center gap-1.5 rounded-lg border bg-card/90 px-2.5 py-1.5 font-mono text-xs transition-colors',
             menuOpen
               ? 'border-cyan-400/40 bg-cyan-500/10 text-cyan-200'
               : 'border-cyan-500/15 text-foreground hover:border-cyan-400/30 hover:bg-card',
@@ -538,7 +538,7 @@ function CategorizedNavBar({
     <div
       ref={navRef}
       data-slot="tabs-list"
-      className="relative z-30 inline-flex flex-wrap items-center gap-1 rounded-xl bg-card/90 p-1 text-muted-foreground shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] ring-1 ring-cyan-500/15"
+      className="relative z-30 inline-flex flex-wrap items-center gap-1 rounded-xl bg-card/95 p-1 text-muted-foreground shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] ring-1 ring-cyan-500/15"
     >
       {/* Dashboard Fixo */}
       <button
@@ -580,7 +580,7 @@ function CategorizedNavBar({
               <span className={cn(activeChild && 'text-cyan-400')}>{group.icon}</span>
               <span>{group.label}</span>
               {group.id === 'sistema' && updateAvailable && (
-                <span className="size-2 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" title={`Nova versão v${latestVersion} disponível`} />
+                <span className="size-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" title={`Nova versão v${latestVersion} disponível`} />
               )}
               {activeChild && (
                 <span className="rounded-md border border-cyan-400/30 bg-cyan-500/15 px-1.5 py-0.2 font-mono text-[10px] font-semibold text-cyan-200">
@@ -727,9 +727,16 @@ function Console({
   const gpuInfo = sys?.gpu
   const primaryGpu = gpuInfo?.available ? gpuInfo.primary : null
 
+  // Se o host não possui GPU dedicada e o hash abriu em #gpu, redireciona suavemente para o dashboard
+  useEffect(() => {
+    if (sys && !gpuInfo?.available && activeTab === 'gpu') {
+      setActiveTab('dashboard')
+    }
+  }, [sys, gpuInfo?.available, activeTab, setActiveTab])
+
   return (
     <div className="min-h-dvh bg-transparent">
-      <header className="relative z-40 border-b border-cyan-500/15 bg-background/85 shadow-[0_4px_30px_rgba(0,0,0,0.45)] backdrop-blur-xl before:pointer-events-none before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-cyan-400/45 before:to-transparent sm:sticky sm:top-0">
+      <header className="relative z-40 border-b border-cyan-500/15 bg-background/95 shadow-[0_4px_30px_rgba(0,0,0,0.45)] before:pointer-events-none before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-cyan-400/45 before:to-transparent sm:sticky sm:top-0">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 sm:px-6">
           <div className="flex max-w-full shrink-0 items-center gap-2.5">
             <div className="relative shrink-0">
@@ -827,7 +834,7 @@ function Console({
               variant="outline"
               className="h-auto shrink-0 gap-1.5 border-emerald-500/25 bg-emerald-500/10 px-2 py-1.5 font-mono text-[10px] text-emerald-300"
             >
-              <span className="size-1.5 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+              <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
               {sys ? 'ONLINE' : 'SYNC'}
             </Badge>
             <ThemeSwitcher />
@@ -847,7 +854,7 @@ function Console({
               latestVersion={latestVersion}
             />
 
-            <div className="hidden items-center gap-2 rounded-lg border border-cyan-500/15 bg-card/60 px-3 py-1.5 font-mono text-[11px] text-muted-foreground backdrop-blur-md xl:flex">
+            <div className="hidden items-center gap-2 rounded-lg border border-cyan-500/15 bg-card/90 px-3 py-1.5 font-mono text-[11px] text-muted-foreground xl:flex">
               <span className="size-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
               <span>POLLING: 2000ms</span>
               <span className="text-cyan-500/40">|</span>
@@ -942,7 +949,7 @@ function Console({
         </Tabs>
       </main>
 
-      <footer className="mt-8 border-t border-cyan-500/15 bg-background/40 backdrop-blur-sm">
+      <footer className="mt-8 border-t border-cyan-500/15 bg-background/85">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-center gap-x-2 px-4 py-5 text-center font-mono text-xs text-muted-foreground sm:px-6">
           <img src="/logo-mark.png" alt="" width={20} height={20} className="size-5 object-cover" />
           <span className="font-semibold text-foreground">Linux Resource</span>
@@ -1004,6 +1011,7 @@ export default function App() {
       /* sessão já inválida */
     }
     setUser(null)
+    setSessionExpiresAt(null)
     setSetup(false)
   }, [])
 
@@ -1018,8 +1026,9 @@ export default function App() {
           <LoginScreen
             mode={setup ? 'setup' : 'login'}
             host={hostInfo}
-            onSuccess={(u) => {
+            onSuccess={(u, exp) => {
               setUser(u)
+              if (exp !== undefined) setSessionExpiresAt(exp)
               setSetup(false)
             }}
           />

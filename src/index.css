@@ -193,12 +193,10 @@ html[data-theme="monokai"] {
     @apply bg-background text-foreground antialiased selection:bg-cyan-500/25 selection:text-cyan-200;
     font-feature-settings: "rlig" 1, "calt" 1, "zero" 1;
     background-image:
-      radial-gradient(ellipse 80% 50% at 50% -15%, oklch(0.75 0.15 195 / 0.11), transparent 70%),
-      radial-gradient(ellipse 50% 40% at 90% 10%, oklch(0.65 0.2 275 / 0.07), transparent 65%),
       linear-gradient(to right, oklch(0.75 0.1 215 / 0.035) 1px, transparent 1px),
       linear-gradient(to bottom, oklch(0.75 0.1 215 / 0.035) 1px, transparent 1px);
-    background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
-    background-attachment: fixed;
+    background-size: 32px 32px;
+    background-repeat: repeat;
   }
   html {
     @apply font-sans;
@@ -215,6 +213,7 @@ html[data-theme="retro-bw"] body {
     linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
   background-size: 100% 4px, 24px 24px, 24px 24px;
+  background-repeat: repeat;
   filter: grayscale(1) contrast(1.06);
 }
 
@@ -233,6 +232,7 @@ html[data-theme="light-bw"] body {
     linear-gradient(to right, rgba(0, 0, 0, 0.055) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(0, 0, 0, 0.055) 1px, transparent 1px);
   background-size: 24px 24px;
+  background-repeat: repeat;
   filter: grayscale(1);
 }
 
@@ -305,11 +305,9 @@ html[data-theme="light-bw"] .ring-white\/10 {
 html[data-theme="monokai"] body {
   background-color: #272822;
   background-image:
-    radial-gradient(ellipse 80% 50% at 50% -15%, rgba(166, 226, 46, 0.1), transparent 70%),
-    radial-gradient(ellipse 50% 40% at 90% 10%, rgba(249, 38, 114, 0.08), transparent 65%),
     linear-gradient(to right, rgba(230, 219, 116, 0.04) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(230, 219, 116, 0.04) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+  background-size: 32px 32px;
 }
 
 html[data-theme="monokai"] [data-slot="card"] {

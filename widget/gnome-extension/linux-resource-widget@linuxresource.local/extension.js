@@ -52,14 +52,26 @@ function panelLabel(text, style = 'font-weight: 600;') {
 }
 
 function launchNativeWindow() {
-  try {
-    GLib.spawn_command_line_async('/usr/bin/linux-resource-window');
-  } catch {
-    try {
-      GLib.spawn_command_line_async('xdg-open http://127.0.0.1:10450');
-    } catch {
-      /* ignore */
+  const home = GLib.get_home_dir();
+  const candidates = [
+    `${home}/.local/bin/linux-resource-window`,
+    `${home}/.local/share/bin/linux-resource-window`,
+    '/usr/bin/linux-resource-window',
+  ];
+  for (const bin of candidates) {
+    if (GLib.file_test(bin, GLib.FileTest.IS_EXECUTABLE)) {
+      try {
+        GLib.spawn_command_line_async(bin);
+        return;
+      } catch {
+        /* tenta o próximo */
+      }
     }
+  }
+  try {
+    GLib.spawn_command_line_async('xdg-open http://127.0.0.1:10450');
+  } catch {
+    /* ignore */
   }
 }
 

@@ -74,6 +74,7 @@ function parseCookies(header) {
 }
 
 export function appendSetCookie(res, value) {
+  if (!res) return;
   if (!res.__setCookies) res.__setCookies = [];
   res.__setCookies.push(value);
 }
@@ -90,7 +91,16 @@ function secureContext(req) {
 }
 
 function cookieString(req, value, maxAge) {
-  const parts = [`${COOKIE_NAME}=${value}`, 'Path=/', 'HttpOnly', 'SameSite=Lax', `Max-Age=${maxAge}`];
+  const expires =
+    maxAge > 0 ? new Date(Date.now() + maxAge * 1000).toUTCString() : new Date(0).toUTCString();
+  const parts = [
+    `${COOKIE_NAME}=${value}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${maxAge}`,
+    `Expires=${expires}`,
+  ];
   if (secureContext(req)) parts.push('Secure');
   return parts.join('; ');
 }
@@ -105,8 +115,20 @@ export function clientIp(req) {
 
 /* -------------------------------- sessions ------------------------------- */
 
+function extractHeaderToken(req) {
+  const direct = req.headers?.['x-session-token'];
+  if (typeof direct === 'string' && direct.trim()) return direct.trim();
+  const authHeader = req.headers?.authorization;
+  if (typeof authHeader === 'string' && /^Bearer\s+/i.test(authHeader)) {
+    return authHeader.replace(/^Bearer\s+/i, '').trim();
+  }
+  return null;
+}
+
 export function sessionFromRequest(req, res = null) {
-  const token = parseCookies(req.headers.cookie)[COOKIE_NAME];
+  const cookieToken = parseCookies(req.headers.cookie)[COOKIE_NAME];
+  const headerToken = extractHeaderToken(req);
+  const token = cookieToken || headerToken;
   if (!token) return null;
   const tokenHash = sha256(token);
   const session = db.getSession(tokenHash);
@@ -123,14 +145,17 @@ export function sessionFromRequest(req, res = null) {
     if (res) {
       appendSetCookie(res, cookieString(req, token, Math.floor(renewMs / 1000)));
     }
+  } else if (!cookieToken && headerToken && res && remaining > 0) {
+    // Restaura o cookie HttpOnly caso a WebView tenha perdido o cookie mas enviado X-Session-Token
+    appendSetCookie(res, cookieString(req, token, Math.floor(remaining / 1000)));
   }
   return { ...session, token };
 }
 
 function computeTtlMs({ ttlDays, rememberMe } = {}) {
   const days = ttlDays
-    ? Math.max(1, Math.min(365, Number(ttlDays) || 7))
-    : (rememberMe ? 30 : SESSION_TTL_DAYS);
+    ? Math.max(1, Math.min(365, Number(ttlDays) || 30))
+    : (rememberMe === false ? SESSION_TTL_DAYS : 30);
   return { days, ms: days * 24 * 60 * 60 * 1000 };
 }
 
@@ -187,8 +212,8 @@ export function isSetupNeeded() {
   return db.countUsers() === 0;
 }
 
-export function status(req) {
-  const session = sessionFromRequest(req);
+export function status(req, res = null) {
+  const session = sessionFromRequest(req, res);
   const sys = getSystem();
   const primaryGpu = sys.gpu?.primary || null;
   return {
@@ -225,8 +250,8 @@ export function createAccount(username, password, role = 'admin') {
 export function setupAdmin(username, password, req, res, options = {}) {
   if (!isSetupNeeded()) throw httpError(409, 'já existe um usuário cadastrado');
   const user = createAccount(username, password, 'admin');
-  startSession(user.id, req, res, options);
-  return user;
+  const sess = startSession(user.id, req, res, options);
+  return { user, sessionExpiresAt: sess.expiresAt, token: sess.token };
 }
 
 export function login(username, password, req, res, options = {}) {
@@ -243,8 +268,9 @@ export function login(username, password, req, res, options = {}) {
   }
   resetLoginFailures(ip);
   db.recordLogin(row.id);
-  startSession(row.id, req, res, options);
-  return db.publicUser(db.findUserById(row.id));
+  const sess = startSession(row.id, req, res, options);
+  const user = db.publicUser(db.findUserById(row.id));
+  return { user, sessionExpiresAt: sess.expiresAt, token: sess.token };
 }
 
 
@@ -259,6 +285,7 @@ export function extendSession(session, req, res, { ttlDays = 30 } = {}) {
     ok: true,
     sessionExpiresAt: expiresAt,
     ttlDays: days,
+    token: session.token,
     expiresAtDate: new Date(expiresAt).toISOString(),
   };
 }

@@ -7,11 +7,33 @@ const MIB = 1024 * 1024;
 const GIB = 1024 * 1024 * 1024;
 const PCI_CACHE_TTL = 5 * 60 * 1000;
 const PMON_CACHE_TTL = 4000;
+const CONNECTORS_CACHE_TTL = 30 * 1000;
+const NVIDIA_LAST_GOOD_TTL = 15 * 1000;
+const NVIDIA_ABSENT_TTL = 60 * 1000;
 
 let pciNamesCache = { ts: 0, bySlot: new Map() };
 let pmonCache = { ts: 0, byIdx: new Map() };
+let connectorsCache = new Map(); // key: `${drmRoot}:${card}` -> { ts, connectors }
+let lastNvidiaCache = { ts: 0, gpus: [] };
+let nvidiaPresenceCache = { ts: 0, present: null };
 
-function runCmd(bin, args, timeout = 3500) {
+function hasNvidiaDeviceNodes() {
+  const now = Date.now();
+  if (nvidiaPresenceCache.present !== null && now - nvidiaPresenceCache.ts < NVIDIA_ABSENT_TTL) {
+    return nvidiaPresenceCache.present;
+  }
+  const paths = [
+    '/dev/nvidiactl',
+    '/proc/driver/nvidia/gpus',
+    SCAN_ROOT ? `${SCAN_ROOT}/dev/nvidiactl` : null,
+    SCAN_ROOT ? `${SCAN_ROOT}/proc/driver/nvidia/gpus` : null,
+  ].filter(Boolean);
+  const present = paths.some((p) => existsSync(p));
+  nvidiaPresenceCache = { ts: now, present };
+  return present;
+}
+
+function runCmd(bin, args, timeout = 4500) {
   return new Promise((resolve) => {
     execFile(bin, args, { timeout, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
       resolve({
@@ -23,7 +45,11 @@ function runCmd(bin, args, timeout = 3500) {
   });
 }
 
-async function runNvidiaSmi(args, timeout = 3000) {
+async function runNvidiaSmi(args, timeout = 4500) {
+  if (!hasNvidiaDeviceNodes()) {
+    return { ok: false, stdout: '', stderr: 'no nvidia device' };
+  }
+
   const direct = await runCmd('nvidia-smi', args, timeout);
   if (direct.ok && direct.stdout.trim()) return direct;
 
@@ -186,7 +212,7 @@ async function queryNvidiaProcesses(uuidsByIndex) {
   }
 
   const byIdx = new Map();
-  const pmon = await runNvidiaSmi(['pmon', '-c', '1', '-s', 'um'], 2500);
+  const pmon = await runNvidiaSmi(['pmon', '-c', '1', '-s', 'um'], 3000);
   if (pmon.ok && pmon.stdout) {
     let headerCols = null;
     for (const rawLine of pmon.stdout.split('\n')) {
@@ -243,6 +269,11 @@ async function queryNvidiaProcesses(uuidsByIndex) {
     return byIdx;
   }
 
+  // Se pmon falhou/deu timeout sob carga extrema, reaproveita cache recente antes do fallback
+  if (Date.now() - pmonCache.ts < NVIDIA_LAST_GOOD_TTL && pmonCache.byIdx.size > 0) {
+    return pmonCache.byIdx;
+  }
+
   // Fallback para compute-apps caso pmon não seja suportado
   const comp = await runNvidiaSmi(
     ['--query-compute-apps=gpu_uuid,pid,process_name,used_memory', '--format=csv,noheader,nounits'],
@@ -280,6 +311,8 @@ async function queryNvidiaProcesses(uuidsByIndex) {
 }
 
 async function queryNvidiaSmi() {
+  if (!hasNvidiaDeviceNodes()) return [];
+
   const fields = [
     'index',
     'uuid',
@@ -315,8 +348,15 @@ async function queryNvidiaSmi() {
     'persistence_mode',
   ].join(',');
 
-  const r = await runNvidiaSmi([`--query-gpu=${fields}`, '--format=csv,noheader,nounits'], 3000);
-  if (!r.ok || !r.stdout.trim()) return [];
+  const r = await runNvidiaSmi([`--query-gpu=${fields}`, '--format=csv,noheader,nounits'], 4500);
+  if (!r.ok || !r.stdout.trim()) {
+    // Sob carga extrema da GPU (90-100%), o nvidia-smi pode atrasar; preserva o último snapshot válido
+    // para evitar que a interface pisque ou desmonte os componentes de GPU.
+    if (lastNvidiaCache.gpus.length > 0 && Date.now() - lastNvidiaCache.ts < NVIDIA_LAST_GOOD_TTL) {
+      return lastNvidiaCache.gpus.map((g) => ({ ...g }));
+    }
+    return [];
+  }
 
   const gpus = [];
   const uuidsByIndex = new Map();
@@ -418,6 +458,10 @@ async function queryNvidiaSmi() {
     for (const g of gpus) {
       g.processes = procsByIdx.get(g.index) || [];
     }
+    lastNvidiaCache = {
+      ts: Date.now(),
+      gpus: gpus.map((g) => ({ ...g })),
+    };
   }
 
   return gpus;
@@ -516,6 +560,12 @@ function pcieGenFromSpeed(speedTxt) {
 }
 
 async function readCardConnectors(drmRoot, card) {
+  const cacheKey = `${drmRoot}:${card}`;
+  const cached = connectorsCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < CONNECTORS_CACHE_TTL) {
+    return cached.connectors;
+  }
+
   const connectors = [];
   try {
     const entries = await fsp.readdir(drmRoot);
@@ -525,7 +575,7 @@ async function readCardConnectors(drmRoot, card) {
       const connDir = path.join(drmRoot, name);
       const status = await readTextSafe(path.join(connDir, 'status'));
       if (!status) continue;
-      const modesTxt = await readTextSafe(path.join(connDir, 'modes'));
+      const modesTxt = status === 'connected' ? await readTextSafe(path.join(connDir, 'modes')) : null;
       const mode = modesTxt ? modesTxt.split('\n')[0].trim() || null : null;
       connectors.push({
         name: name.slice(prefix.length),
@@ -534,6 +584,7 @@ async function readCardConnectors(drmRoot, card) {
         mode,
       });
     }
+    connectorsCache.set(cacheKey, { ts: Date.now(), connectors });
   } catch {
     /* ignore */
   }
@@ -572,7 +623,7 @@ async function readHwmonMetrics(deviceDir) {
   return {};
 }
 
-async function readDrmGpus(pciNames) {
+async function readDrmGpus(pciNames, knownNvidiaBuses = new Set()) {
   const roots = [
     SCAN_ROOT ? `${SCAN_ROOT}/sys/class/drm` : null,
     '/sys/class/drm',
@@ -602,17 +653,44 @@ async function readDrmGpus(pciNames) {
 
         const busId = normalizeBusId(uevent.PCI_SLOT_NAME);
         const driver = uevent.DRIVER || null;
-        const vbios = await readTextSafe(path.join(devDir, 'vbios_version'));
+        const pciName = (busId && pciNames.get(busId)) || null;
+        const fallbackName = pciName || `${vendor} Graphics (${card})`;
 
+        // Se a GPU NVIDIA já foi lida via nvidia-smi, coleta apenas os conectores em cache (30s)
+        // sem tocar em arquivos sysfs de AMD/Intel a cada 2s.
+        if (vendor === 'NVIDIA' && busId && knownNvidiaBuses.has(busId)) {
+          const connectors = await readCardConnectors(drmRoot, card);
+          out.push({
+            busId,
+            name: fallbackName,
+            vendor,
+            driver,
+            connectors,
+          });
+          continue;
+        }
+
+        // Métricas básicas de VRAM para filtrar iGPUs ANTES de sondar hwmon ou conectores DRM
+        const vramTotal = await readIntSafe(path.join(devDir, 'mem_info_vram_total'));
+        const earlyCandidate = {
+          name: fallbackName,
+          vendor,
+          driver,
+          busId,
+          memTotal: vramTotal,
+        };
+
+        // Ignora placas gráficas integradas (iGPU/APU) imediatamente, sem sondar conectores DRM
+        if (isIntegratedGpu(earlyCandidate)) continue;
+
+        const vbios = await readTextSafe(path.join(devDir, 'vbios_version'));
         const curSpeed = await readTextSafe(path.join(devDir, 'current_link_speed'));
         const maxSpeed = await readTextSafe(path.join(devDir, 'max_link_speed'));
         const pcieWidth = await readIntSafe(path.join(devDir, 'current_link_width'));
         const pcieWidthMax = await readIntSafe(path.join(devDir, 'max_link_width'));
 
-        // Métricas AMD / DRM sysfs
         const gpuBusy = await readIntSafe(path.join(devDir, 'gpu_busy_percent'));
         const memBusy = await readIntSafe(path.join(devDir, 'mem_busy_percent'));
-        const vramTotal = await readIntSafe(path.join(devDir, 'mem_info_vram_total'));
         const vramUsed = await readIntSafe(path.join(devDir, 'mem_info_vram_used'));
         const vramFree = vramTotal != null && vramUsed != null ? Math.max(0, vramTotal - vramUsed) : null;
         const memPct = vramTotal && vramUsed != null ? Math.min(100, Math.max(0, (vramUsed / vramTotal) * 100)) : null;
@@ -636,8 +714,6 @@ async function readDrmGpus(pciNames) {
           readHwmonMetrics(devDir),
           readCardConnectors(drmRoot, card),
         ]);
-        const pciName = (busId && pciNames.get(busId)) || null;
-        const fallbackName = pciName || `${vendor} Graphics (${card})`;
 
         const candidate = {
           index: out.length,
@@ -678,9 +754,6 @@ async function readDrmGpus(pciNames) {
           processes: [],
         };
 
-        // Ignora placas gráficas integradas (iGPU/APU), mantendo apenas placas de vídeo dedicadas
-        if (isIntegratedGpu(candidate)) continue;
-
         out.push(candidate);
       }
       if (out.length > 0) return out;
@@ -702,7 +775,7 @@ export async function sampleGpus() {
   }
 
   // Fallback para /proc/driver/nvidia/gpus quando nvidia-smi não está disponível no container
-  if (nvidiaSmiGpus.length === 0) {
+  if (nvidiaSmiGpus.length === 0 && hasNvidiaDeviceNodes()) {
     const procNvidia = await readNvidiaProcFallback();
     for (const g of procNvidia) {
       if (g.busId) byBus.set(g.busId, g);
@@ -710,7 +783,7 @@ export async function sampleGpus() {
     }
   }
 
-  const drmGpus = await readDrmGpus(pciNames);
+  const drmGpus = await readDrmGpus(pciNames, new Set(byBus.keys()));
   for (const d of drmGpus) {
     if (d.busId && byBus.has(d.busId)) {
       const existing = byBus.get(d.busId);

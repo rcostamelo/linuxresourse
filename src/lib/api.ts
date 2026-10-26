@@ -878,6 +878,31 @@ export class ApiError extends Error {
 }
 
 export const UNAUTHORIZED_EVENT = 'lr:unauthorized'
+const SESSION_TOKEN_KEY = 'lr:session_token'
+
+export function getStoredSessionToken(): string | null {
+  try {
+    return localStorage.getItem(SESSION_TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function setStoredSessionToken(token: string | null | undefined) {
+  try {
+    if (token) localStorage.setItem(SESSION_TOKEN_KEY, token)
+    else localStorage.removeItem(SESSION_TOKEN_KEY)
+  } catch {
+    /* ignore storage errors */
+  }
+}
+
+function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = { ...(extra || {}) }
+  const token = getStoredSessionToken()
+  if (token) headers['X-Session-Token'] = token
+  return headers
+}
 
 async function parseError(r: Response) {
   let message = `${r.status} ${r.statusText}`
@@ -887,12 +912,18 @@ async function parseError(r: Response) {
   } catch {
     /* sem corpo JSON */
   }
-  if (r.status === 401) window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT))
+  if (r.status === 401) {
+    setStoredSessionToken(null)
+    window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT))
+  }
   return new ApiError(r.status, message)
 }
 
 async function getJson<T>(url: string): Promise<T> {
-  const r = await fetch(url, { credentials: 'same-origin' })
+  const r = await fetch(url, {
+    credentials: 'same-origin',
+    headers: authHeaders(),
+  })
   if (!r.ok) throw await parseError(r)
   return (await r.json()) as T
 }
@@ -901,7 +932,7 @@ async function postJson<T>(url: string, body?: unknown): Promise<T> {
   const r = await fetch(url, {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body ?? {}),
   })
   if (!r.ok) throw await parseError(r)
@@ -1023,34 +1054,63 @@ export interface SystemAboutOverview {
 
 export const api = {
   authStatus: () => getJson<AuthStatus>('/api/auth/status'),
-  authSetup: (
+  authSetup: async (
     username: string,
     password: string,
     options?: { rememberMe?: boolean; ttlDays?: number }
-  ) =>
-    postJson<{ ok: boolean; user: AuthUser }>('/api/auth/setup', {
-      username,
-      password,
-      rememberMe: options?.rememberMe,
-      ttlDays: options?.ttlDays,
-    }),
-  authLogin: (
+  ) => {
+    const res = await postJson<{ ok: boolean; user: AuthUser; sessionExpiresAt?: number; token?: string }>(
+      '/api/auth/setup',
+      {
+        username,
+        password,
+        rememberMe: options?.rememberMe,
+        ttlDays: options?.ttlDays,
+      }
+    )
+    if (res.token) setStoredSessionToken(res.token)
+    return res
+  },
+  authLogin: async (
     username: string,
     password: string,
     options?: { rememberMe?: boolean; ttlDays?: number }
-  ) =>
-    postJson<{ ok: boolean; user: AuthUser }>('/api/auth/login', {
-      username,
-      password,
-      rememberMe: options?.rememberMe,
-      ttlDays: options?.ttlDays,
-    }),
-  authLogout: () => postJson<{ ok: boolean }>('/api/auth/logout'),
+  ) => {
+    const res = await postJson<{ ok: boolean; user: AuthUser; sessionExpiresAt?: number; token?: string }>(
+      '/api/auth/login',
+      {
+        username,
+        password,
+        rememberMe: options?.rememberMe,
+        ttlDays: options?.ttlDays,
+      }
+    )
+    if (res.token) setStoredSessionToken(res.token)
+    return res
+  },
+  authLogout: async () => {
+    try {
+      return await postJson<{ ok: boolean }>('/api/auth/logout')
+    } finally {
+      setStoredSessionToken(null)
+    }
+  },
   authMe: () => getJson<{ user: AuthUser; sessionExpiresAt: number }>('/api/auth/me'),
-  authExtendSession: (input: { ttlDays: number }) =>
-    postJson<{ ok: boolean; sessionExpiresAt: number; ttlDays: number }>('/api/auth/session/extend', input),
-  authKeepAlive: () =>
-    getJson<{ ok: boolean; user: AuthUser; sessionExpiresAt: number }>('/api/auth/session/keepalive'),
+  authExtendSession: async (input: { ttlDays: number }) => {
+    const res = await postJson<{ ok: boolean; sessionExpiresAt: number; ttlDays: number; token?: string }>(
+      '/api/auth/session/extend',
+      input
+    )
+    if (res.token) setStoredSessionToken(res.token)
+    return res
+  },
+  authKeepAlive: async () => {
+    const res = await getJson<{ ok: boolean; user: AuthUser; sessionExpiresAt: number; token?: string }>(
+      '/api/auth/session/keepalive'
+    )
+    if (res.token) setStoredSessionToken(res.token)
+    return res
+  },
   authChangePassword: (currentPassword: string, newPassword: string) =>
     postJson<{ ok: boolean }>('/api/auth/password', { currentPassword, newPassword }),
   panelUsersOverview: () => getJson<PanelUsersOverview>('/api/auth/users'),

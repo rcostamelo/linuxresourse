@@ -18,8 +18,8 @@ URL="$BASE_URL"
 # 1. Janela nativa GTK4 + WebKitGTK (com application_id = linux-resource para associar o ícone no Wayland/KDE/GNOME)
 if command -v python3 >/dev/null 2>&1; then
   if python3 -c "import gi; gi.require_version('Gtk', '4.0'); gi.require_version('WebKit', '6.0')" >/dev/null 2>&1; then
-    python3 - "$BASE_URL" "$TAB" <<'PYEOF' >/dev/null 2>&1 &
-import sys, gi
+    GSK_RENDERER=cairo WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 python3 - "$BASE_URL" "$TAB" <<'PYEOF' >/dev/null 2>&1 &
+import os, sys, gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('WebKit', '6.0')
 from gi.repository import Gtk, WebKit, GLib, Gio
@@ -29,12 +29,19 @@ initial_tab = sys.argv[2] if len(sys.argv) > 2 else ""
 GLib.set_prgname("linux-resource")
 GLib.set_application_name("Linux Resource")
 
+profile_dir = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "linux-resource-window")
+data_dir = os.path.join(profile_dir, "webkit-data")
+cache_dir = os.path.join(profile_dir, "webkit-cache")
+os.makedirs(data_dir, exist_ok=True)
+os.makedirs(cache_dir, exist_ok=True)
+
 class LinuxResourceApp(Gtk.Application):
     def __init__(self):
         # HANDLES_COMMAND_LINE: uma segunda execução (ex.: bandeja -> "sobre") reaproveita a janela aberta
         super().__init__(application_id="org.linuxresource.app", flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         self.win = None
         self.webview = None
+        self.net_session = None
 
     def show(self, tab):
         target = base_url + ("/#" + tab if tab else "")
@@ -43,8 +50,26 @@ class LinuxResourceApp(Gtk.Application):
             self.win.set_title("Linux Resource — Mission Control")
             self.win.set_default_size(1380, 860)
             self.win.set_icon_name("linux-resource")
-            self.webview = WebKit.WebView()
-            self.webview.get_settings().set_enable_developer_extras(False)
+
+            try:
+                self.net_session = WebKit.NetworkSession.new(data_dir, cache_dir)
+                cookie_mgr = self.net_session.get_cookie_manager()
+                cookie_mgr.set_persistent_storage(
+                    os.path.join(data_dir, "cookies.sqlite"),
+                    WebKit.CookiePersistentStorage.SQLITE,
+                )
+                cookie_mgr.set_accept_policy(WebKit.CookieAcceptPolicy.ALWAYS)
+                self.webview = WebKit.WebView(network_session=self.net_session)
+            except Exception:
+                self.webview = WebKit.WebView()
+
+            settings = self.webview.get_settings()
+            settings.set_enable_developer_extras(False)
+            try:
+                settings.set_hardware_acceleration_policy(WebKit.HardwareAccelerationPolicy.NEVER)
+            except Exception:
+                pass
+
             self.webview.load_uri(target)
             self.win.set_child(self.webview)
             self.win.connect("close-request", self.on_close)
@@ -68,7 +93,7 @@ app.run(["linux-resource"] + ([initial_tab] if initial_tab else []))
 PYEOF
     exit 0
   elif python3 -c "import gi; gi.require_version('Gtk', '3.0'); gi.require_version('WebKit2', '4.1')" >/dev/null 2>&1; then
-    python3 - "$URL" <<'PYEOF' >/dev/null 2>&1 &
+    WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 python3 - "$URL" <<'PYEOF' >/dev/null 2>&1 &
 import sys, os, gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('WebKit2', '4.1')
@@ -77,6 +102,21 @@ from gi.repository import Gtk, WebKit2, GLib
 url = sys.argv[1]
 GLib.set_prgname("linux-resource")
 GLib.set_application_name("Linux Resource")
+
+profile_dir = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "linux-resource-window")
+data_dir = os.path.join(profile_dir, "webkit2-data")
+os.makedirs(data_dir, exist_ok=True)
+
+try:
+    ctx = WebKit2.WebContext.get_default()
+    cookie_mgr = ctx.get_cookie_manager()
+    cookie_mgr.set_persistent_storage(
+        os.path.join(data_dir, "cookies.sqlite"),
+        WebKit2.CookiePersistentStorage.SQLITE,
+    )
+    cookie_mgr.set_accept_policy(WebKit2.CookieAcceptPolicy.ALWAYS)
+except Exception:
+    pass
 
 win = Gtk.Window(title="Linux Resource — Mission Control")
 win.set_default_size(1380, 860)
@@ -91,6 +131,10 @@ for p in ["/usr/share/pixmaps/linux-resource.png", os.path.expanduser("~/.local/
             pass
 win.connect("destroy", Gtk.main_quit)
 webview = WebKit2.WebView()
+try:
+    webview.get_settings().set_hardware_acceleration_policy(WebKit2.HardwareAccelerationPolicy.NEVER)
+except Exception:
+    pass
 webview.load_uri(url)
 win.add(webview)
 win.show_all()

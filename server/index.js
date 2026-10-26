@@ -166,24 +166,24 @@ function serveStatic(req, res, pathname) {
 }
 
 async function handleAuth(req, res, p, url) {
-  if (p === '/api/auth/status') return json(res, 200, auth.status(req));
+  if (p === '/api/auth/status') return json(res, 200, auth.status(req, res));
 
   if (p === '/api/auth/setup' && req.method === 'POST') {
     const body = await readJson(req);
-    const user = auth.setupAdmin(body.username, body.password, req, res, {
+    const { user, sessionExpiresAt, token } = auth.setupAdmin(body.username, body.password, req, res, {
       rememberMe: body.rememberMe,
       ttlDays: body.ttlDays,
     });
-    return json(res, 201, { ok: true, user });
+    return json(res, 201, { ok: true, user, sessionExpiresAt, token });
   }
 
   if (p === '/api/auth/login' && req.method === 'POST') {
     const body = await readJson(req);
-    const user = auth.login(body.username, body.password, req, res, {
+    const { user, sessionExpiresAt, token } = auth.login(body.username, body.password, req, res, {
       rememberMe: body.rememberMe,
       ttlDays: body.ttlDays,
     });
-    return json(res, 200, { ok: true, user });
+    return json(res, 200, { ok: true, user, sessionExpiresAt, token });
   }
 
   if (p === '/api/auth/session/extend' && req.method === 'POST') {
@@ -200,6 +200,7 @@ async function handleAuth(req, res, p, url) {
       ok: true,
       user: session.user,
       sessionExpiresAt: session.expiresAt,
+      token: session.token,
     });
   }
 
