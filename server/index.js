@@ -1,6 +1,5 @@
 import { createServer } from 'node:http';
 import { createReadStream, existsSync } from 'node:fs';
-import { timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { handleScan, fsInfo, listDisks } from './disk.js';
 import { startSampler, getProcesses, getMemory, getSystem, getGpu, getCpuTemp, getNetworkRates, getHistory, killProcess } from './system.js';
@@ -23,6 +22,7 @@ import {
   deleteNginxSite,
   getNginxLogs,
 } from './nginx.js';
+import { getSystemAboutOverview, triggerSystemUpdate, getUpdateSummary } from './updater.js';
 import {
   getProcManagersOverview,
   runProcManagerAction,
@@ -40,7 +40,7 @@ import {
   getInspect,
   runAction,
 } from './docker.js';
-import { DIST, PORT, HOST, DB_FILE, WIDGET_TOKEN } from './config.js';
+import { DIST, PORT, HOST, DB_FILE, WIDGET_PORT } from './config.js';
 import {
   initDb,
   listClusters,
@@ -244,18 +244,38 @@ const PUBLIC_API = new Set([
   '/api/auth/logout',
 ]);
 
-// Widget de desktop (GNOME Shell e KDE Plasma): aceita conexões loopback locais ou token X-Widget-Token.
-function isLoopbackRequest(req) {
-  const remote = String(req.socket?.remoteAddress || "");
-  return remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
-}
+// Widget de desktop (GNOME Shell e KDE Plasma): endpoints SOMENTE LOCAIS.
+// Sem token e sem acesso remoto: a conexão precisa chegar pela interface loopback, sem
+// sinais de proxy reverso (nginx local repassaria tudo como 127.0.0.1) nem de navegador
+// (Origin/Referer/Sec-Fetch-*), e o Host precisa ser local (bloqueia DNS rebinding).
+const LOOPBACK_ADDRS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+const PROXY_OR_BROWSER_HEADERS = [
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'x-forwarded-proto',
+  'x-forwarded-port',
+  'x-real-ip',
+  'forwarded',
+  'via',
+  'cf-connecting-ip',
+  'true-client-ip',
+  'x-client-ip',
+  'origin',
+  'referer',
+  'sec-fetch-site',
+  'sec-fetch-mode',
+  'sec-fetch-dest',
+];
 
 function isWidgetAuthorized(req) {
-  if (isLoopbackRequest(req)) return true;
-  if (!WIDGET_TOKEN) return false;
-  const given = Buffer.from(String(req.headers['x-widget-token'] || ''));
-  const expected = Buffer.from(WIDGET_TOKEN);
-  return given.length === expected.length && timingSafeEqual(given, expected);
+  const remote = String(req.socket?.remoteAddress || '');
+  const local = String(req.socket?.localAddress || '');
+  if (!LOOPBACK_ADDRS.has(remote) || !LOOPBACK_ADDRS.has(local)) return false;
+  for (const h of PROXY_OR_BROWSER_HEADERS) {
+    if (req.headers[h] !== undefined) return false;
+  }
+  const host = String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '');
+  return host === '127.0.0.1' || host === 'localhost' || host === '[::1]';
 }
 
 function widgetMetrics() {
@@ -291,6 +311,68 @@ function widgetMetrics() {
     network: { rx, tx },
     history: getHistory().points.slice(-60).map((pt) => ({ cpu: pt.cpu, mem: pt.mem, gpu: pt.gpu ?? null })),
   }));
+}
+
+
+let widgetServicesCache = { ts: 0, data: null, pending: null };
+
+async function widgetServices() {
+  if (widgetServicesCache.data && Date.now() - widgetServicesCache.ts < 6000) return widgetServicesCache.data;
+  if (widgetServicesCache.pending) return widgetServicesCache.pending;
+  widgetServicesCache.pending = (async () => {
+    const [dock, pm] = await Promise.all([
+      getContainers().catch(() => ({ available: false, containers: [], counts: {} })),
+      getProcManagersOverview().catch(() => null),
+    ]);
+    const containers = (dock.containers || [])
+      .slice()
+      .sort((a, b) => (a.state === 'running' ? 0 : 1) - (b.state === 'running' ? 0 : 1) || (b.stats?.cpu || 0) - (a.stats?.cpu || 0))
+      .slice(0, 8)
+      .map((c) => ({
+        name: c.name,
+        state: c.state,
+        status: c.status,
+        cpu: c.stats ? Number(c.stats.cpu.toFixed(1)) : null,
+        mem: c.stats?.memUsage ? String(c.stats.memUsage).split('/')[0].trim() : null,
+      }));
+    const procs = (pm?.processes || []).filter((p) => p.status !== 'saved');
+    const rank = { online: 0, launching: 1, errored: 2, stopped: 3 };
+    const procList = procs
+      .slice()
+      .sort((a, b) => (rank[a.status] ?? 4) - (rank[b.status] ?? 4) || (b.cpu || 0) - (a.cpu || 0))
+      .slice(0, 8)
+      .map((p) => ({
+        engine: p.engine,
+        owner: p.owner,
+        name: p.name,
+        status: p.status,
+        cpu: Number(p.cpu) || 0,
+        memory: Number(p.memory) || 0,
+      }));
+    const data = {
+      ts: Date.now(),
+      docker: {
+        available: Boolean(dock.available),
+        running: dock.counts?.running || 0,
+        total: (dock.containers || []).length,
+        containers,
+      },
+      procs: {
+        online: procs.filter((p) => p.status === 'online').length,
+        errored: procs.filter((p) => p.status === 'errored').length,
+        total: procs.length,
+        pm2: procs.filter((p) => p.engine === 'pm2').length,
+        procman: procs.filter((p) => p.engine === 'procman').length,
+        list: procList,
+      },
+    };
+    widgetServicesCache = { ts: Date.now(), data, pending: null };
+    return data;
+  })().catch((e) => {
+    widgetServicesCache.pending = null;
+    throw e;
+  });
+  return widgetServicesCache.pending;
 }
 
 function sshTarget(row) {
@@ -346,10 +428,8 @@ const server = createServer(async (req, res) => {
   try {
     if (p.startsWith('/api/auth/')) return await handleAuth(req, res, p, url);
 
-    if (p === '/api/widget/metrics' && req.method === 'GET') {
-      if (!isWidgetAuthorized(req)) return json(res, 401, { error: 'token do widget inválido' });
-      return json(res, 200, await widgetMetrics());
-    }
+    // Os endpoints do widget NÃO existem nesta porta (pública); ficam em listener próprio só-loopback.
+    if (p.startsWith('/api/widget/')) return json(res, 404, { error: 'não encontrado' });
 
     if (p.startsWith('/api/')) {
       if (!PUBLIC_API.has(p)) {
@@ -542,6 +622,22 @@ const server = createServer(async (req, res) => {
       const body = await readJson(req);
       try {
         return json(res, 200, await installProcmandGlobal(body, actorFromRes(res)));
+      } catch (err) {
+        return json(res, 400, { ok: false, error: String(err.message || err) });
+      }
+    }
+
+
+    /* ------------------------ Sobre o Sistema & Atualizações ---------------- */
+    if (p === '/api/system-update/overview' && req.method === 'GET') {
+      const force = url.searchParams.get('force') === '1';
+      return json(res, 200, await getSystemAboutOverview({ force }));
+    }
+
+    if (p === '/api/system-update/apply' && req.method === 'POST') {
+      const body = await readJson(req);
+      try {
+        return json(res, 200, await triggerSystemUpdate(body, actorFromRes(res)));
       } catch (err) {
         return json(res, 400, { ok: false, error: String(err.message || err) });
       }
@@ -847,6 +943,31 @@ const server = createServer(async (req, res) => {
 
 initDb();
 startSampler();
+
+// Listener exclusivo do widget: bound em 127.0.0.1 (inalcançável da rede) e fora da porta do painel,
+// portanto também não é exposto por proxy reverso apontado para o painel.
+const widgetServer = createServer(async (req, res) => {
+  try {
+    const p = new URL(req.url, 'http://127.0.0.1').pathname;
+    if (req.method !== 'GET' || !isWidgetAuthorized(req)) {
+      return json(res, 403, { error: 'endpoint do widget disponível somente localmente' });
+    }
+    if (p === '/api/widget/metrics') return json(res, 200, await widgetMetrics());
+    if (p === '/api/widget/services') return json(res, 200, await widgetServices());
+    if (p === '/api/widget/update') {
+      const force = new URL(req.url, 'http://127.0.0.1').searchParams.get('force') === '1';
+      return json(res, 200, await getUpdateSummary({ force }));
+    }
+    return json(res, 404, { error: 'não encontrado' });
+  } catch (err) {
+    return json(res, 500, { error: 'erro interno' });
+  }
+});
+widgetServer.on('error', (err) => console.warn(`widget: listener local indisponível (${err.code || err.message})`));
+widgetServer.listen(WIDGET_PORT, '127.0.0.1', () => {
+  console.log(`Widget (somente local) → http://127.0.0.1:${WIDGET_PORT}`);
+});
+
 
 server.listen(PORT, HOST, () => {
   console.log(`Linux Resource → http://${HOST}:${PORT}`);

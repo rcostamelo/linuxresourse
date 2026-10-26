@@ -12,8 +12,6 @@ services:
       DATA_DIR: /data
       SCAN_ROOT: /host
       TZ: ${TZ:-America/Sao_Paulo}
-      # Token do widget de desktop (vazio = desativado). Gere com: openssl rand -hex 32
-      WIDGET_TOKEN: ${WIDGET_TOKEN:-}
       DOCKER_GID: ${DOCKER_GID:-124}
       # Se usar ssh-agent (chave com senha), descomente e use junto com o volume do agent:
       # SSH_AUTH_SOCK: /run/agent.sock

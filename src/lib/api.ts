@@ -961,6 +961,61 @@ export interface AuthStatus {
   host?: AuthHostSummary
 }
 
+
+export interface SystemReleaseItem {
+  id: number
+  tagName: string
+  version: string
+  name: string
+  body: string
+  publishedAt: string | null
+  htmlUrl: string
+  prerelease: boolean
+  debAsset: {
+    name: string
+    size: number
+    downloadUrl: string
+  } | null
+}
+
+export interface SystemUpdateJob {
+  running: boolean
+  status: "idle" | "running" | "success" | "error"
+  startedAt: number | null
+  finishedAt: number | null
+  targetVersion: string | null
+  mode: string | null
+  step: string
+  logs: string[]
+  error: string | null
+}
+
+export interface SystemAboutOverview {
+  ts: number
+  currentVersion: string
+  latestVersion: string
+  updateAvailable: boolean
+  latestRelease: SystemReleaseItem | null
+  releases: SystemReleaseItem[]
+  releasesError: string | null
+  environment: {
+    installMode: "deb" | "docker-git" | "git" | "standalone"
+    isDebInstalled: boolean
+    isDockerContainer: boolean
+    gitRepoDir: string | null
+    desktopEnv: string
+    kdeWidgetInstalled: boolean
+    gnomeWidgetInstalled: boolean
+    desktopLauncherInstalled: boolean
+    nodeVersion: string
+    platform: string
+    hostname: string
+  }
+  sudo: OsSudoStatus
+  updateJob: SystemUpdateJob
+  repoUrl: string
+}
+
 export const api = {
   authStatus: () => getJson<AuthStatus>('/api/auth/status'),
   authSetup: (username: string, password: string) =>
@@ -1108,4 +1163,8 @@ export const api = {
     postJson<{ ok: boolean; server: SshServer }>('/api/ssh/servers/update', { id, ...input }),
   sshDeleteServer: (id: number) => postJson<{ ok: boolean }>('/api/ssh/servers/delete', { id }),
   sshTestServer: (id: number) => postJson<SshTestResult>('/api/ssh/servers/test', { id }),
+  systemUpdateOverview: (force = false) =>
+    getJson<SystemAboutOverview>(`/api/system-update/overview${force ? "?force=1" : ""}`),
+  systemUpdateApply: (tagName?: string) =>
+    postJson<{ ok: boolean; updateJob: SystemUpdateJob }>('/api/system-update/apply', { tagName }),
 }

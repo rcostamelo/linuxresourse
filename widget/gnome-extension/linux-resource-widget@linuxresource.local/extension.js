@@ -7,10 +7,9 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
-const ENDPOINT = 'http://127.0.0.1:10450/api/widget/metrics';
+// Endpoint somente local (loopback), sem token.
+const ENDPOINT = 'http://127.0.0.1:10451/api/widget/metrics';
 const POLL_SECONDS = 2;
-const TOKEN_FILE = ['linux-resource-widget', 'token'];
-const SYSTEM_TOKEN_FILE = '/etc/linux-resource/widget-token';
 
 // Ícones simbólicos do Adwaita (tema de fallback do GNOME, sempre instalado).
 const ICONS = {
@@ -23,20 +22,6 @@ const ICONS = {
 const COLOR_OK = '#9ece6a';
 const COLOR_WARN = '#e0af68';
 const COLOR_CRIT = '#f7768e';
-
-// Primeiro o token do usuário (~/.config), depois o do sistema instalado pelo .deb.
-function readToken() {
-  const candidates = [GLib.build_filenamev([GLib.get_user_config_dir(), ...TOKEN_FILE]), SYSTEM_TOKEN_FILE];
-  for (const path of candidates) {
-    try {
-      const [ok, contents] = GLib.file_get_contents(path);
-      if (ok) return new TextDecoder().decode(contents).trim();
-    } catch {
-      /* arquivo ausente: tenta o próximo */
-    }
-  }
-  return '';
-}
 
 function levelColor(pct) {
   if (pct >= 85) return COLOR_CRIT;
@@ -81,7 +66,6 @@ function launchNativeWindow() {
 export default class LinuxResourceWidget extends Extension {
   enable() {
     this._session = new Soup.Session({ timeout: 3 });
-    this._token = readToken();
     this._busy = false;
 
     this._indicator = new PanelMenu.Button(0.0, 'Linux Resource', false);
@@ -131,17 +115,9 @@ export default class LinuxResourceWidget extends Extension {
 
   _refresh() {
     if (this._busy || !this._session) return;
-    if (!this._token) {
-      this._token = readToken();
-    }
-    if (!this._token) {
-      this._setOffline('sem token');
-      return;
-    }
     this._busy = true;
 
     const msg = Soup.Message.new('GET', ENDPOINT);
-    msg.get_request_headers().append('X-Widget-Token', this._token);
     this._session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (session, result) => {
       this._busy = false;
       if (!this._indicator) return;

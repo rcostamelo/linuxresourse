@@ -8,8 +8,8 @@ export const ROOT = path.resolve(__dirname, '..');
 export const DIST = path.join(ROOT, 'dist');
 
 export const PORT = Number(process.env.PORT) || 10450;
-// Token do widget de desktop (/api/widget/metrics). Vazio = rota desativada.
-export const WIDGET_TOKEN = process.env.WIDGET_TOKEN || '';
+// Porta do widget de desktop: listener separado, SEMPRE em 127.0.0.1.
+export const WIDGET_PORT = Number(process.env.WIDGET_PORT) || 10451;
 export const HOST = process.env.HOST || '127.0.0.1';
 
 export const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, 'data');

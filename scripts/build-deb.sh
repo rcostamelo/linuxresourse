@@ -28,6 +28,7 @@ mkdir -p \
   "$STAGE_DIR/usr/bin" \
   "$STAGE_DIR/usr/share/applications" \
   "$STAGE_DIR/usr/share/pixmaps" \
+  "$STAGE_DIR/usr/share/icons/hicolor/256x256/apps" \
   "$STAGE_DIR/usr/share/gnome-shell/extensions" \
   "$STAGE_DIR/usr/share/plasma/plasmoids" \
   "$STAGE_DIR/etc/xdg/autostart" \
@@ -39,6 +40,8 @@ cp "$ROOT_DIR/package.json" "$STAGE_DIR/opt/$PKG_NAME/package.json"
 [ -f "$ROOT_DIR/LICENSE" ] && cp "$ROOT_DIR/LICENSE" "$STAGE_DIR/opt/$PKG_NAME/LICENSE"
 [ -f "$ROOT_DIR/README.md" ] && cp "$ROOT_DIR/README.md" "$STAGE_DIR/opt/$PKG_NAME/README.md"
 [ -f "$ROOT_DIR/public/logo-mark.png" ] && cp "$ROOT_DIR/public/logo-mark.png" "$STAGE_DIR/usr/share/pixmaps/$PKG_NAME.png"
+[ -f "$ROOT_DIR/public/logo-mark.png" ] && cp "$ROOT_DIR/public/logo-mark.png" "$STAGE_DIR/usr/share/icons/hicolor/256x256/apps/$PKG_NAME.png"
+[ -f "$ROOT_DIR/public/logo-mark.png" ] && cp "$ROOT_DIR/public/logo-mark.png" "$STAGE_DIR/usr/share/icons/hicolor/256x256/apps/org.linuxresource.app.png"
 
 # 1. Widget para GNOME Shell (instalado em /usr/share/gnome-shell/extensions)
 WIDGET_UUID="linux-resource-widget@linuxresource.local"
@@ -55,6 +58,10 @@ chmod 0755 "$STAGE_DIR/usr/bin/linux-resource-window"
 # 4. Detector automático de Desktop Environment (GNOME ou KDE Plasma) para ativar o widget na barra
 cp "$ROOT_DIR/scripts/linux-resource-desktop-setup.sh" "$STAGE_DIR/usr/bin/linux-resource-desktop-setup"
 chmod 0755 "$STAGE_DIR/usr/bin/linux-resource-desktop-setup"
+
+# Instala o ícone de bandeja (system tray)
+cp "$ROOT_DIR/scripts/linux-resource-tray.py" "$STAGE_DIR/usr/bin/linux-resource-tray"
+chmod 0755 "$STAGE_DIR/usr/bin/linux-resource-tray"
 
 # Arquivo de configuração em /etc/default/linux-resource
 cat > "$STAGE_DIR/etc/default/$PKG_NAME" <<'EOF'
@@ -141,7 +148,6 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=-/etc/default/linux-resource
-EnvironmentFile=-/etc/linux-resource/widget.env
 WorkingDirectory=/opt/linux-resource
 ExecStart=/opt/linux-resource/run-server.sh
 Restart=on-failure
@@ -173,6 +179,10 @@ case "$cmd" in
   widget)
     exec /usr/bin/linux-resource-desktop-setup
     ;;
+  tray)
+    nohup /usr/bin/linux-resource-tray >/dev/null 2>&1 &
+    echo "Ícone de bandeja iniciado."
+    ;;
   status)
     systemctl status linux-resource.service --no-pager
     ;;
@@ -187,9 +197,10 @@ case "$cmd" in
     echo "Abrindo http://127.0.0.1:${PORT} no navegador..."
     ;;
   *)
-    echo "Uso: linux-resource {app|window|widget|status|start|stop|restart|logs|open}"
+    echo "Uso: linux-resource {app|window|widget|tray|status|start|stop|restart|logs|open}"
     echo "  app / window : Abre o aplicativo em janela dedicada do Linux (sem abas de navegador)"
-    echo "  widget       : Detecta GNOME ou KDE Plasma e ativa o widget na barra do sistema"
+    echo "  widget       : Detecta GNOME ou KDE Plasma e ativa o widget na barra do sistema
+  tray         : Inicia o ícone de bandeja do sistema (system tray)"
     echo "  status/logs  : Consulta o servico systemd"
     echo "  open         : Abre em uma aba do navegador padrao (http://127.0.0.1:${PORT})"
     exit 1
@@ -199,7 +210,7 @@ EOF
 chmod 0755 "$STAGE_DIR/usr/bin/$PKG_NAME"
 
 # Atalho Desktop (.desktop) -> abre a janela dedicada nativa (sem barra de navegador)
-cat > "$STAGE_DIR/usr/share/applications/$PKG_NAME.desktop" <<'EOF'
+cat > "$STAGE_DIR/usr/share/applications/org.linuxresource.app.desktop" <<'EOF'
 [Desktop Entry]
 Name=Linux Resource
 Comment=Console nativo de telemetria, gerenciamento e otimização para Linux
@@ -208,7 +219,7 @@ Icon=linux-resource
 Terminal=false
 Type=Application
 StartupNotify=true
-StartupWMClass=linux-resource
+StartupWMClass=org.linuxresource.app
 Categories=System;Monitor;Utility;
 Keywords=linux;monitor;disk;docker;ssh;process;memory;network;gpu;nginx;procman;pm2;
 Actions=OpenBrowser;EnableWidget;
@@ -221,6 +232,7 @@ Exec=xdg-open http://127.0.0.1:10450
 Name=Ativar Widget na Barra (GNOME / KDE)
 Exec=/usr/bin/linux-resource-desktop-setup
 EOF
+ln -sf org.linuxresource.app.desktop "$STAGE_DIR/usr/share/applications/$PKG_NAME.desktop"
 
 # Autostart XDG universal: detecta se o login gráfico é GNOME ou KDE Plasma e ativa o widget correspondente
 cat > "$STAGE_DIR/etc/xdg/autostart/$PKG_NAME-widget.desktop" <<'EOF'
@@ -234,6 +246,21 @@ NoDisplay=true
 X-GNOME-Autostart-enabled=true
 EOF
 
+
+# Autostart XDG do ícone de bandeja: inicia junto com a sessão gráfica do usuário
+cat > "$STAGE_DIR/etc/xdg/autostart/$PKG_NAME-tray.desktop" <<'DESKEOF'
+[Desktop Entry]
+Type=Application
+Name=Linux Resource (bandeja do sistema)
+Comment=Ícone na bandeja com status, menu de clique direito e alerta de atualização
+Exec=/usr/bin/linux-resource-tray
+Icon=linux-resource
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=panel
+DESKEOF
+
 # Calcula tamanho instalado em KB
 INSTALLED_SIZE="$(du -sk "$STAGE_DIR" | awk '{print $1}')"
 
@@ -245,7 +272,7 @@ Priority: optional
 Architecture: $ARCH
 Installed-Size: $INSTALLED_SIZE
 Depends: coreutils, iputils-ping, openssh-client
-Recommends: nodejs (>= 22.5.0), docker.io | docker-ce | docker-ce-cli, nginx, sshpass, pciutils
+Recommends: nodejs (>= 22.5.0), docker.io | docker-ce | docker-ce-cli, nginx, sshpass, pciutils, python3-pyqt6 | python3-pyqt5 | gir1.2-ayatanaappindicator3-0.1
 Suggests: python3-gi, gir1.2-webkit-6.0 | gir1.2-webkit2-4.1, gnome-shell, plasma-workspace
 Maintainer: Raony <rcostamelo@gmail.com>
 Homepage: https://github.com/rcostamelo/linuxresourse
@@ -283,16 +310,8 @@ set -e
 mkdir -p /var/lib/linux-resource
 chmod 0700 /var/lib/linux-resource
 
-# Token do widget: gerado só na primeira instalação (upgrades preservam o existente)
-if [ ! -f /etc/linux-resource/widget.env ]; then
-  mkdir -p /etc/linux-resource
-  chmod 0755 /etc/linux-resource
-  token="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
-  printf 'WIDGET_TOKEN=%s\n' "$token" > /etc/linux-resource/widget.env
-  chmod 0600 /etc/linux-resource/widget.env
-  printf '%s' "$token" > /etc/linux-resource/widget-token
-  chmod 0644 /etc/linux-resource/widget-token
-fi
+# Endpoint do widget é somente local (loopback), sem token. Remove resíduos de versões antigas.
+rm -f /etc/linux-resource/widget.env /etc/linux-resource/widget-token
 
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
   systemctl daemon-reload >/dev/null 2>&1 || true

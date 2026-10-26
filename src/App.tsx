@@ -19,6 +19,7 @@ import {
   Radio,
   Server,
   ShieldCheck,
+  Sparkles,
   Terminal,
   User,
   Zap,
@@ -51,6 +52,7 @@ import { SshPanel } from '@/components/SshPanel'
 import { ProcManagersPanel } from '@/components/ProcManagersPanel'
 import { CleanupPanel } from '@/components/CleanupPanel'
 import { OsUsersPanel } from '@/components/OsUsersPanel'
+import { SystemUpdatePanel } from '@/components/SystemUpdatePanel'
 import { LoginScreen } from '@/components/LoginScreen'
 import { PanelUsersModal } from '@/components/PanelUsersModal'
 import { api, UNAUTHORIZED_EVENT } from '@/lib/api'
@@ -348,10 +350,14 @@ function CategorizedNavBar({
   activeTab,
   onSelectTab,
   hasGpu,
+  updateAvailable,
+  latestVersion,
 }: {
   activeTab: string
   onSelectTab: (v: string) => void
   hasGpu: boolean
+  updateAvailable?: boolean
+  latestVersion?: string
 }) {
   const [openGroup, setOpenGroup] = useState<string | null>(null)
   const navRef = useRef<HTMLDivElement | null>(null)
@@ -447,6 +453,12 @@ function CategorizedNavBar({
             desc: 'Caches, logs systemd e pacotes órfãos',
             icon: <Eraser className="size-3.5 text-amber-400" />,
           },
+          {
+            value: 'sobre',
+            label: 'Sobre & Atualizações',
+            desc: 'Update 1-click, versão e releases do GitHub',
+            icon: <Sparkles className="size-3.5 text-emerald-400" />,
+          },
         ],
       },
     ]
@@ -517,6 +529,9 @@ function CategorizedNavBar({
             >
               <span className={cn(activeChild && 'text-cyan-400')}>{group.icon}</span>
               <span>{group.label}</span>
+              {group.id === 'sistema' && updateAvailable && (
+                <span className="size-2 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" title={`Nova versão v${latestVersion} disponível`} />
+              )}
               {activeChild && (
                 <span className="rounded-md border border-cyan-400/30 bg-cyan-500/15 px-1.5 py-0.2 font-mono text-[10px] font-semibold text-cyan-200">
                   {activeChild.label}
@@ -558,8 +573,13 @@ function CategorizedNavBar({
                             {item.icon}
                           </div>
                           <div className="min-w-0">
-                            <div className="truncate font-mono text-xs font-semibold leading-tight">
-                              {item.label}
+                            <div className="flex items-center gap-1.5 truncate font-mono text-xs font-semibold leading-tight">
+                              <span>{item.label}</span>
+                              {item.value === 'sobre' && updateAvailable && (
+                                <span className="rounded bg-emerald-500/20 px-1 py-0.2 text-[9px] font-bold text-emerald-300 ring-1 ring-emerald-400/40">
+                                  v{latestVersion}
+                                </span>
+                              )}
                             </div>
                             <div className="truncate text-[10px] text-muted-foreground">
                               {item.desc}
@@ -580,10 +600,52 @@ function CategorizedNavBar({
   )
 }
 
+const VALID_TABS = new Set([
+  'dashboard', 'procman', 'rede', 'nginx', 'docker', 'ssh',
+  'disco', 'processos', 'memoria', 'gpu', 'limpeza', 'usuarios', 'sobre',
+])
+
+function tabFromHash(): string {
+  const h = window.location.hash.replace(/^#/, '').trim()
+  return VALID_TABS.has(h) ? h : 'dashboard'
+}
+
 function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   const { data: sys } = usePoll(api.system, 2000)
   const { data: mem } = usePoll(api.memory, 2000)
-  const [activeTab, setActiveTab] = useState('dashboard')
+  const { data: about } = usePoll(api.systemUpdateOverview, 30 * 60 * 1000)
+  const [activeTab, setActiveTabState] = useState(tabFromHash)
+  const [dismissedUpdateVer, setDismissedUpdateVer] = useState<string | null>(() => {
+    try { return sessionStorage.getItem('lr_dismissed_update') } catch { return null }
+  })
+  const toastedVerRef = useRef<string | null>(null)
+
+  const setActiveTab = useCallback((v: string) => {
+    setActiveTabState(v)
+    const nextHash = v === 'dashboard' ? '' : `#${v}`
+    if (window.location.hash !== nextHash) {
+      window.history.replaceState(null, '', nextHash || window.location.pathname)
+    }
+  }, [])
+
+  useEffect(() => {
+    const onHash = () => setActiveTabState(tabFromHash())
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  const updateAvailable = Boolean(about?.updateAvailable && about.latestVersion)
+  const latestVersion = about?.latestVersion ?? ''
+
+  useEffect(() => {
+    if (!updateAvailable || !latestVersion || toastedVerRef.current === latestVersion) return
+    toastedVerRef.current = latestVersion
+    toast.info(`Nova versão v${latestVersion} disponível`, {
+      description: `Você está na v${about?.currentVersion ?? APP_VERSION}. Clique para ver as novidades e atualizar.`,
+      duration: 15000,
+      action: { label: 'Atualizar agora', onClick: () => setActiveTab('sobre') },
+    })
+  }, [updateAvailable, latestVersion, about?.currentVersion, setActiveTab])
 
   const cpu = sys?.cpuUsage ?? 0
   const memPct = mem ? (mem.used / mem.total) * 100 : 0
@@ -615,6 +677,17 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
                   <Terminal className="size-2.5" />
                   <span className="hidden 2xl:inline">Mission Control</span> v{APP_VERSION}
                 </span>
+                {updateAvailable && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('sobre')}
+                    title={`Nova versão v${latestVersion} disponível — clique para atualizar`}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-md border border-emerald-400/40 bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-emerald-300 transition hover:bg-emerald-500/25"
+                  >
+                    <Sparkles className="size-2.5 text-emerald-300" />
+                    <span>Atualizar → v{latestVersion}</span>
+                  </button>
+                )}
               </div>
               <p className="mt-0.5 flex items-center gap-1 font-mono text-[10px] truncate text-muted-foreground">
                 {sys ? (
@@ -696,6 +769,8 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               activeTab={activeTab}
               onSelectTab={setActiveTab}
               hasGpu={Boolean(primaryGpu)}
+              updateAvailable={updateAvailable}
+              latestVersion={latestVersion}
             />
 
             <div className="hidden items-center gap-2 rounded-lg border border-cyan-500/15 bg-card/60 px-3 py-1.5 font-mono text-[11px] text-muted-foreground backdrop-blur-md xl:flex">
@@ -707,6 +782,45 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               </span>
             </div>
           </div>
+
+          {updateAvailable && activeTab !== 'sobre' && dismissedUpdateVer !== latestVersion && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-400/35 bg-gradient-to-r from-emerald-500/15 via-cyan-500/10 to-transparent px-4 py-2.5 text-xs shadow-[0_0_25px_-8px_rgba(16,185,129,0.45)]">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="grid size-7 shrink-0 place-items-center rounded-lg border border-emerald-400/40 bg-emerald-500/20 text-emerald-300">
+                  <Sparkles className="size-3.5" />
+                </span>
+                <div className="min-w-0">
+                  <div className="font-mono font-semibold text-emerald-200">
+                    Nova atualização disponível: Linux Resource v{latestVersion}{' '}
+                    <span className="font-normal text-muted-foreground">(atual: v{about?.currentVersion ?? APP_VERSION})</span>
+                  </div>
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {about?.latestRelease?.name || 'Inclui melhorias, correções e novos recursos.'}
+                  </div>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('sobre')}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-emerald-500/25 px-3 py-1.5 font-mono text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/35"
+                >
+                  <Zap className="size-3.5" />
+                  Ver novidades e atualizar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDismissedUpdateVer(latestVersion)
+                    try { sessionStorage.setItem('lr_dismissed_update', latestVersion) } catch {}
+                  }}
+                  className="rounded-lg px-2 py-1 font-mono text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                >
+                  Depois
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="relative z-0">
             <TabsContent value="dashboard">
@@ -746,6 +860,9 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
             </TabsContent>
             <TabsContent value="usuarios">
               <OsUsersPanel />
+            </TabsContent>
+            <TabsContent value="sobre">
+              <SystemUpdatePanel />
             </TabsContent>
           </div>
         </Tabs>

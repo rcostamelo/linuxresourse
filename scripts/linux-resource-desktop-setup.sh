@@ -15,9 +15,33 @@ setup_gnome() {
 }
 
 setup_kde() {
+  local src_dir="/usr/share/plasma/plasmoids/${KDE_ID}"
+  if [ ! -d "$src_dir" ]; then
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    if [ -d "$script_dir/widget/kde-plasmoid/${KDE_ID}" ]; then
+      src_dir="$script_dir/widget/kde-plasmoid/${KDE_ID}"
+    fi
+  fi
+
+  # Garante que o pacote está instalado para o usuário caso não esteja em /usr/share/plasma/plasmoids
+  if [ -d "$src_dir" ] && [ ! -d "/usr/share/plasma/plasmoids/${KDE_ID}" ] && [ ! -d "${HOME}/.local/share/plasma/plasmoids/${KDE_ID}" ]; then
+    if command -v kpackagetool6 >/dev/null 2>&1; then
+      kpackagetool6 -t Plasma/Applet -i "$src_dir" >/dev/null 2>&1 || true
+    elif command -v kpackagetool5 >/dev/null 2>&1; then
+      kpackagetool5 -t Plasma/Applet -i "$src_dir" >/dev/null 2>&1 || true
+    else
+      mkdir -p "${HOME}/.local/share/plasma/plasmoids"
+      cp -r "$src_dir" "${HOME}/.local/share/plasma/plasmoids/${KDE_ID}"
+    fi
+  fi
+
+  # Só adiciona ao painel se o plasmoid realmente existir no sistema ou no diretório do usuário
+  if [ ! -d "/usr/share/plasma/plasmoids/${KDE_ID}" ] && [ ! -d "${HOME}/.local/share/plasma/plasmoids/${KDE_ID}" ]; then
+    return 0
+  fi
+
   local marker="${XDG_CONFIG_HOME:-$HOME/.config}/linux-resource-kde-widget-installed"
-  # O plasmoid já fica registrado em /usr/share/plasma/plasmoids/org.linuxresource.widget
-  # Se qdbus/qdbus6 estiver disponível e for o primeiro login, adiciona ao painel padrão do Plasma se ainda não estiver presente
   if [ ! -f "$marker" ]; then
     local qdbus_bin=""
     for b in qdbus6 qdbus-qt6 qdbus; do
@@ -59,3 +83,12 @@ else
     setup_kde
   fi
 fi
+
+# Inicia o ícone de bandeja (single-instance; ignora se já estiver rodando)
+for tray_bin in /usr/bin/linux-resource-tray "${HOME}/.local/share/bin/linux-resource-tray" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/linux-resource-tray.py"; do
+  if [ -x "$tray_bin" ]; then
+    nohup "$tray_bin" >/dev/null 2>&1 &
+    break
+  fi
+done
+
