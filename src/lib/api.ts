@@ -995,14 +995,19 @@ export interface SystemAboutOverview {
   currentVersion: string
   latestVersion: string
   updateAvailable: boolean
+  backendUpdateAvailable: boolean
+  desktopUpdateAvailable: boolean
   latestRelease: SystemReleaseItem | null
   releases: SystemReleaseItem[]
   releasesError: string | null
   environment: {
     installMode: "deb" | "docker-git" | "git" | "standalone"
     isDebInstalled: boolean
+    desktopVersion: string | null
     isDockerContainer: boolean
     gitRepoDir: string | null
+    composeProject: string | null
+    composeFiles: string[]
     desktopEnv: string
     kdeWidgetInstalled: boolean
     gnomeWidgetInstalled: boolean
@@ -1187,6 +1192,6 @@ export const api = {
   sshTestServer: (id: number) => postJson<SshTestResult>('/api/ssh/servers/test', { id }),
   systemUpdateOverview: (force = false) =>
     getJson<SystemAboutOverview>(`/api/system-update/overview${force ? "?force=1" : ""}`),
-  systemUpdateApply: (tagName?: string) =>
-    postJson<{ ok: boolean; updateJob: SystemUpdateJob }>('/api/system-update/apply', { tagName }),
+  systemUpdateApply: (tagName?: string, confirmContainer = false) =>
+    postJson<{ ok: boolean; updateJob: SystemUpdateJob }>('/api/system-update/apply', { tagName, confirmContainer }),
 }

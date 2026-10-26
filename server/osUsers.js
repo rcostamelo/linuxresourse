@@ -270,16 +270,17 @@ export async function execHostSudo(shellCommand, { overrideCred = null, timeout 
   }
 
   // Sem senha salva: verifica se o usuário no host possui NOPASSWD configurado
-  const nopassInner = `sudo -n sh -c ${shQuote(shellCommand)}`;
-  const nopassCmd = `chroot /host su ${sudoUser} -s /bin/sh -c ${shQuote(nopassInner)}`;
-  const res = await runHostChroot(nopassCmd, { timeout });
+  const nopassCheck = `chroot /host su ${sudoUser} -s /bin/sh -c ${shQuote('sudo -n true')}`;
+  const res = await runHostChroot(nopassCheck, { timeout: 6000 });
   if (res.code !== 0) {
     return {
       ...res,
       error: 'requires_sudo_password',
     };
   }
-  return res;
+  const nopassInner = `sudo -n sh -c ${shQuote(shellCommand)}`;
+  const nopassCmd = `chroot /host su ${sudoUser} -s /bin/sh -c ${shQuote(nopassInner)}`;
+  return runHostChroot(nopassCmd, { timeout });
 }
 
 /**

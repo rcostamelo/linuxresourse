@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Boxes,
   Check,
@@ -215,6 +215,10 @@ export function SystemUpdatePanel() {
   const [loading, setLoading] = useState(true)
   const [checking, setChecking] = useState(false)
   const [applyingTag, setApplyingTag] = useState<string | null>(null)
+  const [confirmTag, setConfirmTag] = useState<string | null>(null)
+  const [updatePending, setUpdatePending] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
+  const pendingTarget = useRef<{ version: string; desktop: boolean; startedAt: number } | null>(null)
 
   // Modal Cofre Sudo
   const [sudoOpen, setSudoOpen] = useState(false)
@@ -233,7 +237,7 @@ export function SystemUpdatePanel() {
       }
       if (force) {
         if (data.updateAvailable) {
-          toast.info(`Nova versão v${data.latestVersion} disponível!`)
+          toast.info(data.backendUpdateAvailable ? `Nova versão v${data.latestVersion} disponível!` : `A integração desktop pode ser atualizada para v${data.latestVersion}.`)
         } else {
           toast.success(`Você já está na versão mais recente (v${data.currentVersion}).`)
         }
@@ -254,26 +258,51 @@ export function SystemUpdatePanel() {
 
   // Se houver um job de atualização rodando, faz polling rápido para atualizar logs e recarregar quando terminar
   useEffect(() => {
-    if (!overview?.updateJob?.running) return
+    if (!updatePending && !overview?.updateJob?.running) return
+    let busy = false
     const id = setInterval(async () => {
+      if (busy) return
+      busy = true
       try {
         const next = await api.systemUpdateOverview(false)
         setOverview(next)
-        if (!next.updateJob.running && next.updateJob.status === 'success') {
+        setReconnecting(false)
+        const target = pendingTarget.current
+        const complete = target && !next.updateJob.running && next.updateJob.status !== 'error' && next.currentVersion === target.version &&
+          (!target.desktop || next.environment.desktopVersion === target.version)
+        if (complete || (!target && !next.updateJob.running && next.updateJob.status === 'success')) {
+          pendingTarget.current = null
+          setUpdatePending(false)
           toast.success('Atualização concluída! Recarregando painel…')
           setTimeout(() => window.location.reload(), 1800)
+        } else if (next.updateJob.status === 'error') {
+          pendingTarget.current = null
+          setUpdatePending(false)
+          toast.error(next.updateJob.error || 'Falha na atualização')
         }
       } catch {
-        setTimeout(() => window.location.reload(), 2500)
+        setReconnecting(true)
+      } finally {
+        busy = false
+        if (pendingTarget.current && Date.now() - pendingTarget.current.startedAt > 10 * 60 * 1000) {
+          pendingTarget.current = null
+          setUpdatePending(false)
+          toast.error('A atualização ainda não foi confirmada. Consulte o estado do serviço antes de tentar novamente.')
+        }
       }
     }, 2000)
     return () => clearInterval(id)
-  }, [overview?.updateJob?.running])
+  }, [updatePending, overview?.updateJob?.running])
 
-  const handleApplyUpdate = async (tagName?: string) => {
+  const handleApplyUpdate = async (tagName?: string, confirmContainer = false) => {
     setApplyingTag(tagName || 'latest')
     try {
-      const res = await api.systemUpdateApply(tagName)
+      const version = overview?.releases.find((release) => release.tagName === tagName)?.version ?? overview?.latestVersion
+      const res = await api.systemUpdateApply(tagName, confirmContainer)
+      if (version) {
+        pendingTarget.current = { version, desktop: Boolean(overview?.environment.isDebInstalled), startedAt: Date.now() }
+      }
+      setUpdatePending(true)
       setOverview((prev) => (prev ? { ...prev, updateJob: res.updateJob } : prev))
       toast.info('Atualização iniciada em segundo plano. Acompanhe o progresso abaixo.')
     } catch (e: unknown) {
@@ -281,6 +310,14 @@ export function SystemUpdatePanel() {
     } finally {
       setApplyingTag(null)
     }
+  }
+
+  const requestApplyUpdate = (tagName?: string) => {
+    const target = overview?.releases.find((release) => release.tagName === tagName)?.version ?? overview?.latestVersion
+    const willRebuild = overview?.environment.isDockerContainer &&
+      (target !== overview.currentVersion || !overview.desktopUpdateAvailable)
+    if (willRebuild) setConfirmTag(tagName || 'latest')
+    else void handleApplyUpdate(tagName)
   }
 
   const handleSaveSudo = async () => {
@@ -323,7 +360,9 @@ export function SystemUpdatePanel() {
           value={`v${overview?.currentVersion ?? '—'}`}
           hint={
             overview?.updateAvailable
-              ? `Nova release disponível: v${overview.latestVersion}`
+              ? overview.backendUpdateAvailable
+                ? `Nova release disponível: v${overview.latestVersion}`
+                : `Desktop v${env?.desktopVersion ?? '—'} pode ser atualizado para v${overview.latestVersion}`
               : 'Sistema na última versão oficial'
           }
           icon={<Sparkles className="size-4 text-cyan-400" />}
@@ -338,10 +377,10 @@ export function SystemUpdatePanel() {
           label="Ambiente Desktop & Widgets"
           value={env?.desktopEnv || 'Linux'}
           hint={
-            env?.kdeWidgetInstalled
-              ? 'Plasmoid KDE + Janela Nativa ativos'
-              : env?.gnomeWidgetInstalled
-                ? 'Extensão GNOME + Janela Nativa ativos'
+            env?.desktopEnv === 'GNOME Shell' && env.gnomeWidgetInstalled
+              ? 'Extensão GNOME instalada'
+              : env?.desktopEnv === 'KDE Plasma' && env.kdeWidgetInstalled
+                ? 'Plasmoid KDE instalado'
                 : 'Modo Servidor / Web Console'
           }
           icon={<Layers className="size-4 text-violet-400" />}
@@ -399,7 +438,7 @@ export function SystemUpdatePanel() {
               <Button
                 size="sm"
                 variant="outline"
-                disabled={checking || Boolean(job?.running)}
+                disabled={checking || updatePending || Boolean(job?.running)}
                 onClick={() => loadOverview(true, false)}
               >
                 {checking ? (
@@ -412,15 +451,15 @@ export function SystemUpdatePanel() {
 
               <Button
                 size="sm"
-                disabled={Boolean(job?.running) || applyingTag !== null}
-                onClick={() => handleApplyUpdate(overview?.latestRelease?.tagName)}
+                disabled={updatePending || Boolean(job?.running) || applyingTag !== null}
+                onClick={() => requestApplyUpdate(overview?.latestRelease?.tagName)}
                 className={cn(
                   overview?.updateAvailable
                     ? 'bg-cyan-500 text-slate-950 hover:bg-cyan-400'
                     : '',
                 )}
               >
-                {job?.running || applyingTag ? (
+                {updatePending || job?.running || applyingTag ? (
                   <Loader2 className="size-3.5 animate-spin" />
                 ) : (
                   <Zap className="size-3.5" />
@@ -434,6 +473,11 @@ export function SystemUpdatePanel() {
         </CardHeader>
 
         <CardContent className="space-y-3 border-t border-border/60 pt-3">
+          {reconnecting && updatePending && (
+            <p role="status" className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-sm text-foreground">
+              O serviço está reiniciando. Aguardando a nova versão responder…
+            </p>
+          )}
           {/* Resumo Técnico da Instalação */}
           <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-xl border border-border/70 bg-background/50 p-3">
@@ -453,7 +497,7 @@ export function SystemUpdatePanel() {
                 Janela Dedicada Linux
               </div>
               <div className="mt-1 font-mono text-xs font-semibold text-cyan-300">
-                {env?.desktopLauncherInstalled ? 'Instalada (GTK4 / WebKitGTK)' : 'Disponível no .deb'}
+                {env?.desktopLauncherInstalled ? `Instalada${env.desktopVersion ? ` · v${env.desktopVersion}` : ''}` : 'Disponível no .deb'}
               </div>
               <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
                 Comando: linux-resource app
@@ -465,11 +509,11 @@ export function SystemUpdatePanel() {
                 Widgets de Barra (GNOME / KDE)
               </div>
               <div className="mt-1 font-mono text-xs font-semibold text-emerald-300">
-                {env?.kdeWidgetInstalled
-                  ? 'KDE Plasma 6 Ativo'
-                  : env?.gnomeWidgetInstalled
-                    ? 'GNOME Shell Ativo'
-                    : 'Auto-detecção pronta'}
+                {env?.desktopEnv === 'GNOME Shell' && env.gnomeWidgetInstalled
+                  ? 'Extensão GNOME instalada'
+                  : env?.desktopEnv === 'KDE Plasma' && env.kdeWidgetInstalled
+                    ? 'Plasmoid KDE instalado'
+                    : 'Nenhum widget detectado para a sessão'}
               </div>
               <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
                 Comando: linux-resource widget
@@ -621,8 +665,8 @@ export function SystemUpdatePanel() {
                         <Button
                           size="xs"
                           variant="outline"
-                          disabled={Boolean(job?.running) || applyingTag !== null}
-                          onClick={() => handleApplyUpdate(rel.tagName)}
+                          disabled={updatePending || Boolean(job?.running) || applyingTag !== null}
+                          onClick={() => requestApplyUpdate(rel.tagName)}
                           className="border-cyan-500/35 text-cyan-300"
                         >
                           {applyingTag === rel.tagName ? (
@@ -652,6 +696,26 @@ export function SystemUpdatePanel() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={confirmTag !== null} onOpenChange={(open) => { if (!open) setConfirmTag(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Atualizar o container Linux Resource?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O container será reconstruído e substituído, mantendo os volumes de dados. O painel ficará indisponível durante o reinício.
+              Se o widget GNOME for atualizado, saia e entre novamente na sessão para carregá-lo.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              const tag = confirmTag === 'latest' ? undefined : confirmTag ?? undefined
+              setConfirmTag(null)
+              void handleApplyUpdate(tag, true)
+            }}>Atualizar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Modal: Cofre Sudo */}
       <AlertDialog open={sudoOpen} onOpenChange={setSudoOpen}>

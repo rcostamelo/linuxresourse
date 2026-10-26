@@ -8,7 +8,7 @@ KDE_ID="org.linuxresource.widget"
 
 DE="$(printf '%s %s %s' "${XDG_CURRENT_DESKTOP:-}" "${DESKTOP_SESSION:-}" "${XDG_SESSION_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')"
 
-setup_gnome() {
+sync_gnome_widget() {
   local system_ext="/usr/share/gnome-shell/extensions/${GNOME_UUID}"
   local user_ext="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/${GNOME_UUID}"
   local version_file=".linux-resource-package-version"
@@ -32,6 +32,10 @@ setup_gnome() {
     install -m 0644 "$system_ext/$version_file" "$user_ext/$version_file"
   fi
 
+}
+
+setup_gnome() {
+  sync_gnome_widget
   if command -v gnome-extensions >/dev/null 2>&1; then
     gnome-extensions enable "$GNOME_UUID" >/dev/null 2>&1 || true
 
@@ -51,6 +55,11 @@ setup_gnome() {
     fi
   fi
 }
+
+if [[ "${1:-}" == "--sync-only" ]]; then
+  sync_gnome_widget
+  exit 0
+fi
 
 setup_kde() {
   local src_dir="/usr/share/plasma/plasmoids/${KDE_ID}"

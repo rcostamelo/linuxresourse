@@ -729,9 +729,9 @@ function Console({
 
   return (
     <div className="min-h-dvh bg-transparent">
-      <header className="sticky top-0 z-40 border-b border-cyan-500/15 bg-background/85 shadow-[0_4px_30px_rgba(0,0,0,0.45)] backdrop-blur-xl before:pointer-events-none before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-cyan-400/45 before:to-transparent">
-        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-2 px-4 py-2.5 sm:px-6 lg:flex-nowrap">
-          <div className="flex min-w-0 items-center gap-2.5">
+      <header className="relative z-40 border-b border-cyan-500/15 bg-background/85 shadow-[0_4px_30px_rgba(0,0,0,0.45)] backdrop-blur-xl before:pointer-events-none before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-cyan-400/45 before:to-transparent sm:sticky sm:top-0">
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 sm:px-6">
+          <div className="flex max-w-full shrink-0 items-center gap-2.5">
             <div className="relative shrink-0">
               <div className="absolute -inset-1 rounded-xl bg-cyan-500/15 blur-md" />
               <img
@@ -743,13 +743,13 @@ function Console({
               />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <h1 className="truncate text-sm leading-tight font-semibold tracking-tight sm:text-base">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <h1 className="shrink-0 text-sm leading-tight font-semibold tracking-tight sm:text-base">
                   Linux Resource
                 </h1>
                 <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-cyan-400/25 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wider text-cyan-300 uppercase">
                   <Terminal className="size-2.5" />
-                  <span className="hidden 2xl:inline">Mission Control</span> v{APP_VERSION}
+                  <span className="hidden 2xl:inline">Mission Control</span> v{about?.currentVersion ?? APP_VERSION}
                 </span>
                 {updateAvailable && (
                   <button
@@ -763,12 +763,12 @@ function Console({
                   </button>
                 )}
               </div>
-              <p className="mt-0.5 flex items-center gap-1 font-mono text-[10px] truncate text-muted-foreground">
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 font-mono text-[10px] break-all text-muted-foreground">
                 {sys ? (
                   <>
                     <span className="text-cyan-300/90">{sys.hostname}</span>
                     <span className="text-cyan-500/40">//</span>
-                    <span className="truncate">{sys.platform}</span>
+                    <span>{sys.platform}</span>
                     <span className="text-cyan-500/40">//</span>
                     <span>{sys.arch}</span>
                   </>
@@ -779,7 +779,7 @@ function Console({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-1.5 lg:flex-nowrap">
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
             <HeaderStat
               icon={<Cpu className="size-3 text-violet-400" />}
               label="CPU"
@@ -946,7 +946,7 @@ function Console({
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-center gap-x-2 px-4 py-5 text-center font-mono text-xs text-muted-foreground sm:px-6">
           <img src="/logo-mark.png" alt="" width={20} height={20} className="size-5 object-cover" />
           <span className="font-semibold text-foreground">Linux Resource</span>
-          <span className="text-cyan-300">v{APP_VERSION}</span>
+          <span className="text-cyan-300">v{about?.currentVersion ?? APP_VERSION}</span>
           <span className="text-cyan-500/50">//</span>
           <span>gerenciar, monitorar e otimizar</span>
           <span className="hidden text-cyan-500/50 sm:inline">//</span>
