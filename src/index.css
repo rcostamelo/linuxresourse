@@ -40,8 +40,10 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
-/* Cyber-Telemetry / Mission Control Dark Theme */
-.dark {
+/* 1. Padrão: Cyber-Telemetry / Mission Control Dark Theme */
+.dark,
+html[data-theme="default"] {
+  --radius: 0.5rem;
   --background: oklch(0.125 0.022 255);
   --foreground: oklch(0.96 0.01 230);
   --card: oklch(0.165 0.026 255);
@@ -75,6 +77,114 @@
   --sidebar-ring: oklch(0.75 0.15 192);
 }
 
+/* 2. Tema Retrô P&B (Preto e Branco Puro · Interfaces Antigas / CRT Monocromático) */
+html[data-theme="retro-bw"] {
+  --radius: 0.125rem;
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #050505;
+  --card-foreground: #ffffff;
+  --popover: #000000;
+  --popover-foreground: #ffffff;
+  --primary: #ffffff;
+  --primary-foreground: #000000;
+  --secondary: #141414;
+  --secondary-foreground: #ffffff;
+  --muted: #121212;
+  --muted-foreground: #a3a3a3;
+  --accent: #1f1f1f;
+  --accent-foreground: #ffffff;
+  --destructive: #ffffff;
+  --border: rgba(255, 255, 255, 0.35);
+  --input: rgba(255, 255, 255, 0.42);
+  --ring: #ffffff;
+  --chart-1: #ffffff;
+  --chart-2: #d4d4d4;
+  --chart-3: #a3a3a3;
+  --chart-4: #737373;
+  --chart-5: #e5e5e5;
+  --sidebar: #000000;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #171717;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.35);
+  --sidebar-ring: #ffffff;
+}
+
+/* 3. Tema Claro P&B (Branco e Preto de Alto Contraste · Papel & Tinta) */
+html[data-theme="light-bw"] {
+  --radius: 0.25rem;
+  --background: #ffffff;
+  --foreground: #09090b;
+  --card: #fafafa;
+  --card-foreground: #09090b;
+  --popover: #ffffff;
+  --popover-foreground: #09090b;
+  --primary: #09090b;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f0f0;
+  --secondary-foreground: #09090b;
+  --muted: #f2f2f3;
+  --muted-foreground: #52525b;
+  --accent: #e4e4e7;
+  --accent-foreground: #09090b;
+  --destructive: #18181b;
+  --border: rgba(9, 9, 11, 0.24);
+  --input: rgba(9, 9, 11, 0.28);
+  --ring: #09090b;
+  --chart-1: #09090b;
+  --chart-2: #3f3f46;
+  --chart-3: #71717a;
+  --chart-4: #27272a;
+  --chart-5: #52525b;
+  --sidebar: #fafafa;
+  --sidebar-foreground: #09090b;
+  --sidebar-primary: #09090b;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e4e4e7;
+  --sidebar-accent-foreground: #09090b;
+  --sidebar-border: rgba(9, 9, 11, 0.22);
+  --sidebar-ring: #09090b;
+}
+
+/* 4. Tema Monokai Classic */
+html[data-theme="monokai"] {
+  --radius: 0.45rem;
+  --background: #272822;
+  --foreground: #f8f8f2;
+  --card: #1e1f1c;
+  --card-foreground: #f8f8f2;
+  --popover: #1b1c19;
+  --popover-foreground: #f8f8f2;
+  --primary: #a6e22e;
+  --primary-foreground: #1b1c19;
+  --secondary: #34352f;
+  --secondary-foreground: #f8f8f2;
+  --muted: #31322c;
+  --muted-foreground: #a59f85;
+  --accent: #3e3d32;
+  --accent-foreground: #f8f8f2;
+  --destructive: #f92672;
+  --border: rgba(230, 219, 116, 0.2);
+  --input: rgba(230, 219, 116, 0.25);
+  --ring: #a6e22e;
+  --chart-1: #a6e22e;
+  --chart-2: #66d9ef;
+  --chart-3: #ae81ff;
+  --chart-4: #fd971f;
+  --chart-5: #f92672;
+  --sidebar: #1e1f1c;
+  --sidebar-foreground: #f8f8f2;
+  --sidebar-primary: #a6e22e;
+  --sidebar-primary-foreground: #1e1f1c;
+  --sidebar-accent: #34352f;
+  --sidebar-accent-foreground: #f8f8f2;
+  --sidebar-border: rgba(230, 219, 116, 0.2);
+  --sidebar-ring: #a6e22e;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -93,6 +203,136 @@
   html {
     @apply font-sans;
   }
+}
+
+/* ==================== Ajustes Visuais Específicos por Tema ==================== */
+
+/* Retrô P&B: totalmente monocromático, bordas definidas e estética de terminal antigo */
+html[data-theme="retro-bw"] body {
+  background-color: #000000;
+  background-image:
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 50%, transparent 50%),
+    linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 100% 4px, 24px 24px, 24px 24px;
+  filter: grayscale(1) contrast(1.06);
+}
+
+html[data-theme="retro-bw"] [data-slot="card"],
+html[data-theme="retro-bw"] header,
+html[data-theme="retro-bw"] [data-slot="tabs-list"] {
+  box-shadow: 2px 2px 0px rgba(255, 255, 255, 0.22) !important;
+  border-color: rgba(255, 255, 255, 0.45) !important;
+}
+
+/* Claro P&B: fundo claro e alto contraste preto no branco */
+html[data-theme="light-bw"] body {
+  background-color: #ffffff;
+  color: #09090b;
+  background-image:
+    linear-gradient(to right, rgba(0, 0, 0, 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.055) 1px, transparent 1px);
+  background-size: 24px 24px;
+  filter: grayscale(1);
+}
+
+html[data-theme="light-bw"] [data-slot="card"] {
+  background-color: #ffffff !important;
+  box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.12) !important;
+  border: 1px solid rgba(0, 0, 0, 0.22) !important;
+}
+
+html[data-theme="light-bw"] header {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+  border-bottom-color: rgba(0, 0, 0, 0.25) !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Adapta classes utilitárias pensadas para fundo escuro quando em Claro P&B */
+html[data-theme="light-bw"] .text-cyan-100,
+html[data-theme="light-bw"] .text-cyan-200,
+html[data-theme="light-bw"] .text-cyan-300,
+html[data-theme="light-bw"] .text-cyan-300\/90,
+html[data-theme="light-bw"] .text-cyan-300\/80,
+html[data-theme="light-bw"] .text-cyan-400,
+html[data-theme="light-bw"] .text-emerald-200,
+html[data-theme="light-bw"] .text-emerald-300,
+html[data-theme="light-bw"] .text-emerald-400,
+html[data-theme="light-bw"] .text-amber-200,
+html[data-theme="light-bw"] .text-amber-300,
+html[data-theme="light-bw"] .text-amber-400,
+html[data-theme="light-bw"] .text-rose-200,
+html[data-theme="light-bw"] .text-rose-300,
+html[data-theme="light-bw"] .text-rose-400,
+html[data-theme="light-bw"] .text-violet-200,
+html[data-theme="light-bw"] .text-violet-300,
+html[data-theme="light-bw"] .text-violet-400,
+html[data-theme="light-bw"] .text-sky-300,
+html[data-theme="light-bw"] .text-sky-400 {
+  color: #111111 !important;
+}
+
+html[data-theme="light-bw"] .bg-slate-900,
+html[data-theme="light-bw"] .bg-slate-900\/90,
+html[data-theme="light-bw"] .bg-slate-950,
+html[data-theme="light-bw"] .bg-slate-950\/60,
+html[data-theme="light-bw"] .bg-slate-950\/80,
+html[data-theme="light-bw"] .bg-black\/40,
+html[data-theme="light-bw"] .bg-black\/50 {
+  background-color: #f1f1f3 !important;
+  color: #09090b !important;
+}
+
+html[data-theme="light-bw"] .border-white\/5,
+html[data-theme="light-bw"] .border-white\/10,
+html[data-theme="light-bw"] .border-cyan-500\/15,
+html[data-theme="light-bw"] .border-cyan-500\/20,
+html[data-theme="light-bw"] .border-cyan-500\/25,
+html[data-theme="light-bw"] .border-cyan-400\/25,
+html[data-theme="light-bw"] .border-cyan-400\/30 {
+  border-color: rgba(0, 0, 0, 0.22) !important;
+}
+
+html[data-theme="light-bw"] .ring-cyan-500\/15,
+html[data-theme="light-bw"] .ring-cyan-400\/20,
+html[data-theme="light-bw"] .ring-cyan-400\/25,
+html[data-theme="light-bw"] .ring-white\/5,
+html[data-theme="light-bw"] .ring-white\/10 {
+  --tw-ring-color: rgba(0, 0, 0, 0.22) !important;
+}
+
+/* Monokai Classic: superfície carvão quente + destaques verde/amarelo/rosa/laranja */
+html[data-theme="monokai"] body {
+  background-color: #272822;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -15%, rgba(166, 226, 46, 0.1), transparent 70%),
+    radial-gradient(ellipse 50% 40% at 90% 10%, rgba(249, 38, 114, 0.08), transparent 65%),
+    linear-gradient(to right, rgba(230, 219, 116, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(230, 219, 116, 0.04) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+}
+
+html[data-theme="monokai"] [data-slot="card"] {
+  --tw-ring-color: rgba(230, 219, 116, 0.16);
+}
+
+html[data-theme="monokai"] .text-cyan-200,
+html[data-theme="monokai"] .text-cyan-300,
+html[data-theme="monokai"] .text-cyan-300\/90,
+html[data-theme="monokai"] .text-cyan-300\/80 {
+  color: #e6db74 !important;
+}
+
+html[data-theme="monokai"] .text-cyan-400 {
+  color: #a6e22e !important;
+}
+
+html[data-theme="monokai"] .border-cyan-500\/15,
+html[data-theme="monokai"] .border-cyan-500\/20,
+html[data-theme="monokai"] .border-cyan-500\/25,
+html[data-theme="monokai"] .border-cyan-400\/25,
+html[data-theme="monokai"] .border-cyan-400\/30 {
+  border-color: rgba(166, 226, 46, 0.25) !important;
 }
 
 @theme inline {
@@ -138,13 +378,13 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Mantém fundo escuro quando o navegador preenche usuário/senha automaticamente */
+/* Mantém fundo coerente quando o navegador preenche usuário/senha automaticamente */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 36px oklch(0.165 0.026 255) inset !important;
-  -webkit-text-fill-color: oklch(0.96 0.01 230) !important;
-  caret-color: oklch(0.96 0.01 230) !important;
+  -webkit-box-shadow: 0 0 0 36px var(--card) inset !important;
+  -webkit-text-fill-color: var(--foreground) !important;
+  caret-color: var(--foreground) !important;
   transition: background-color 9999s ease-in-out 0s;
 }

@@ -13,6 +13,16 @@ import {
   saveAndVerifySudo,
   clearSudoCredential,
 } from './osUsers.js';
+import {
+  getNginxOverview,
+  testNginxConfig,
+  runNginxServiceAction,
+  readNginxConfigFile,
+  saveNginxConfigFile,
+  toggleNginxSite,
+  deleteNginxSite,
+  getNginxLogs,
+} from './nginx.js';
 import { getInterfaces, getTcpStates, getLatency, getConnections } from './network.js';
 import {
   getDockerStatus,
@@ -222,7 +232,6 @@ async function handleAuth(req, res, p, url) {
 const PUBLIC_API = new Set([
   '/api/health',
   '/api/auth/status',
-  '/api/auth/status',
   '/api/auth/setup',
   '/api/auth/login',
   '/api/auth/logout',
@@ -422,6 +431,66 @@ const server = createServer(async (req, res) => {
       const body = await readJson(req);
       const r = await runAction(String(body.id), String(body.action));
       return json(res, r.ok ? 200 : 400, r);
+    }
+
+    if (p === '/api/nginx/overview' && req.method === 'GET') {
+      return json(res, 200, await getNginxOverview());
+    }
+
+    if (p === '/api/nginx/test' && req.method === 'POST') {
+      return json(res, 200, await testNginxConfig());
+    }
+
+    if (p === '/api/nginx/action' && req.method === 'POST') {
+      const body = await readJson(req);
+      try {
+        return json(res, 200, await runNginxServiceAction(String(body.action || ''), actorFromRes(res)));
+      } catch (err) {
+        return json(res, 400, { ok: false, error: String(err.message || err) });
+      }
+    }
+
+    if (p === '/api/nginx/file' && req.method === 'GET') {
+      try {
+        const name = String(url.searchParams.get('name') || '');
+        const scope = String(url.searchParams.get('scope') || 'site');
+        return json(res, 200, await readNginxConfigFile(name, scope));
+      } catch (err) {
+        return json(res, 400, { error: String(err.message || err) });
+      }
+    }
+
+    if (p === '/api/nginx/site/save' && req.method === 'POST') {
+      const body = await readJson(req);
+      try {
+        return json(res, 200, await saveNginxConfigFile(body, actorFromRes(res)));
+      } catch (err) {
+        return json(res, 400, { error: String(err.message || err) });
+      }
+    }
+
+    if (p === '/api/nginx/site/toggle' && req.method === 'POST') {
+      const body = await readJson(req);
+      try {
+        return json(res, 200, await toggleNginxSite(body, actorFromRes(res)));
+      } catch (err) {
+        return json(res, 400, { error: String(err.message || err) });
+      }
+    }
+
+    if (p === '/api/nginx/site/delete' && req.method === 'POST') {
+      const body = await readJson(req);
+      try {
+        return json(res, 200, await deleteNginxSite(body, actorFromRes(res)));
+      } catch (err) {
+        return json(res, 400, { error: String(err.message || err) });
+      }
+    }
+
+    if (p === '/api/nginx/logs' && req.method === 'GET') {
+      const kind = String(url.searchParams.get('kind') || 'error');
+      const lines = Number(url.searchParams.get('lines')) || 120;
+      return json(res, 200, await getNginxLogs({ kind, lines }));
     }
 
     if (p === '/api/clean/tasks') return json(res, 200, await listTasks());

@@ -13,6 +13,10 @@ export function hostPath(p) {
   return path.join(SCAN_ROOT, String(p).replace(/^\/+/, ''));
 }
 
+function shQuote(s) {
+  return `'${String(s).replace(/'/g, `'\\''`)}'`;
+}
+
 function exec(bin, args, { timeout = 120000, input = null } = {}) {
   return new Promise((resolve) => {
     const child = execFile(bin, args, { maxBuffer: 16 * 1024 * 1024, timeout }, (err, stdout, stderr) => {
@@ -181,8 +185,18 @@ function runHostChroot(hostCmd, { timeout = 120000, input = null } = {}) {
     '--privileged',
     '--pid=host',
     '--net=host',
+    '-e',
+    'SYSTEMD_IGNORE_CHROOT=1',
     '-v',
     '/:/host',
+    '-v',
+    '/run:/host/run',
+    '-v',
+    '/dev:/host/dev',
+    '-v',
+    '/proc:/host/proc',
+    '-v',
+    '/sys:/host/sys',
     '--entrypoint',
     'sh',
     'linux-resource:latest',
@@ -235,13 +249,13 @@ export async function execHostSudo(shellCommand, { overrideCred = null, timeout 
   }
 
   // Caso 2: Container Docker com /host e /var/run/docker.sock
-  // Validamos a senha sudo real do usuário no host usando chroot /host + su - <user> -c "sudo -S ..."
-  if (password != null) {
-    const innerSudo = `sudo -S -k -p '' sh -c ${JSON.stringify(shellCommand)}`;
+  if (overrideCred?.password != null) {
+    // Durante "Validar e Salvar", testa a senha real do usuário no PAM/sudo do host
+    const innerSudo = `sudo -S -k -p '' sh -c ${shQuote(shellCommand)}`;
     const hostCmd =
       sudoUser === 'root'
-        ? `chroot /host sh -c ${JSON.stringify(shellCommand)}`
-        : `chroot /host su - ${sudoUser} -c ${JSON.stringify(innerSudo)}`;
+        ? `chroot /host sh -c ${shQuote(shellCommand)}`
+        : `chroot /host su ${sudoUser} -s /bin/sh -c ${shQuote(innerSudo)}`;
 
     return runHostChroot(hostCmd, {
       timeout,
@@ -249,9 +263,23 @@ export async function execHostSudo(shellCommand, { overrideCred = null, timeout 
     });
   }
 
-  // Tenta verificar se o usuário no host possui NOPASSWD configurado
-  const nopassCmd = `chroot /host su - ${sudoUser} -c ${JSON.stringify(`sudo -n sh -c ${JSON.stringify(shellCommand)}`)}`;
-  return runHostChroot(nopassCmd, { timeout });
+  if (password != null) {
+    // Com credencial sudo já validada e salva no cofre, executa diretamente no chroot do host
+    const hostCmd = `chroot /host sh -c ${shQuote(shellCommand)}`;
+    return runHostChroot(hostCmd, { timeout });
+  }
+
+  // Sem senha salva: verifica se o usuário no host possui NOPASSWD configurado
+  const nopassInner = `sudo -n sh -c ${shQuote(shellCommand)}`;
+  const nopassCmd = `chroot /host su ${sudoUser} -s /bin/sh -c ${shQuote(nopassInner)}`;
+  const res = await runHostChroot(nopassCmd, { timeout });
+  if (res.code !== 0) {
+    return {
+      ...res,
+      error: 'requires_sudo_password',
+    };
+  }
+  return res;
 }
 
 /**
@@ -262,7 +290,7 @@ export async function execAsHostRegularUser(shellCommand, { timeout = 120000 } =
   if (!IS_HOST_MOUNT) {
     return exec('sh', ['-c', shellCommand], { timeout });
   }
-  const hostCmd = `chroot /host su - ${primary.username} -c ${JSON.stringify(shellCommand)}`;
+  const hostCmd = `chroot /host su - ${primary.username} -c ${shQuote(shellCommand)}`;
   return runHostChroot(hostCmd, { timeout });
 }
 
@@ -322,9 +350,15 @@ export async function saveAndVerifySudo({ username, password }, actor = {}) {
     timeout: 15000,
   });
 
-  if (r.code !== 0 || r.stdout.trim() !== '0') {
-    const msg = (r.stderr || r.error || 'Senha incorreta ou usuário sem permissão sudo').trim();
-    throw new Error(`Falha ao validar sudo para "${user}": ${msg}`);
+  const lastLine = r.stdout.trim().split('\n').pop()?.trim();
+  if (r.code !== 0 || lastLine !== '0') {
+    const rawMsg = (r.stderr || r.error || 'Senha incorreta ou usuário sem permissão sudo').trim();
+    const cleanMsg = rawMsg
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !/Authentication required but not attempted/i.test(l))
+      .join(' · ');
+    throw new Error(`Falha ao validar sudo para "${user}": ${cleanMsg || 'Senha incorreta'}`);
   }
 
   const payload = {
@@ -450,13 +484,13 @@ export async function createOsUser(input, actor = {}) {
 
   const args = [];
   if (createHome) args.push('-m');
-  args.push('-s', JSON.stringify(shell));
-  if (fullName) args.push('-c', JSON.stringify(fullName));
-  if (groups.length > 0) args.push('-G', JSON.stringify(groups.join(',')));
-  args.push(JSON.stringify(username));
+  args.push('-s', shQuote(shell));
+  if (fullName) args.push('-c', shQuote(fullName));
+  if (groups.length > 0) args.push('-G', shQuote(groups.join(',')));
+  args.push(shQuote(username));
 
   const chpasswdLine = `${username}:${password}`;
-  const cmd = `useradd ${args.join(' ')} && printf '%s\\n' ${JSON.stringify(chpasswdLine)} | chpasswd`;
+  const cmd = `useradd ${args.join(' ')} && printf '%s\\n' ${shQuote(chpasswdLine)} | chpasswd`;
 
   const r = await execHostSudo(cmd);
   if (r.code !== 0) {
@@ -498,21 +532,21 @@ export async function updateOsUser(input, actor = {}) {
   if (!shell.startsWith('/') || !SAFE_TEXT_RE.test(shell)) throw new Error('Shell inválido.');
 
   const cmds = [];
-  const modArgs = ['-c', JSON.stringify(fullName), '-s', JSON.stringify(shell)];
+  const modArgs = ['-c', shQuote(fullName), '-s', shQuote(shell)];
   if (existing.uid !== 0) {
-    modArgs.push('-G', JSON.stringify(groups.join(',')));
+    modArgs.push('-G', shQuote(groups.join(',')));
   }
-  modArgs.push(JSON.stringify(username));
+  modArgs.push(shQuote(username));
   cmds.push(`usermod ${modArgs.join(' ')}`);
 
   if (typeof input?.locked === 'boolean' && existing.uid !== 0) {
-    cmds.push(`usermod ${input.locked ? '-L' : '-U'} ${JSON.stringify(username)}`);
+    cmds.push(`usermod ${input.locked ? '-L' : '-U'} ${shQuote(username)}`);
   }
 
   if (password.trim() !== '') {
     if (password.length < 4) throw new Error('A nova senha precisa ter pelo menos 4 caracteres.');
     const chpasswdLine = `${username}:${password}`;
-    cmds.push(`printf '%s\\n' ${JSON.stringify(chpasswdLine)} | chpasswd`);
+    cmds.push(`printf '%s\\n' ${shQuote(chpasswdLine)} | chpasswd`);
   }
 
   const r = await execHostSudo(cmds.join(' && '));
@@ -553,7 +587,7 @@ export async function deleteOsUser(input, actor = {}) {
     throw new Error(`Não é permitido remover o usuário principal do host (${primary.username}).`);
   }
 
-  const cmd = `userdel ${removeHome ? '-r ' : ''}${JSON.stringify(username)}`;
+  const cmd = `userdel ${removeHome ? '-r ' : ''}${shQuote(username)}`;
   const r = await execHostSudo(cmd);
   if (r.code !== 0) {
     const err = (r.stderr || r.error || 'Erro ao remover usuário').trim();

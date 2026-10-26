@@ -1,24 +1,20 @@
-# Linux Resource — mapeando discos, processos, GPUs e Docker reais do host
+# Linux Resource — mapeando discos, processos, GPUs, rede e Docker reais do host
 services:
   linux-resource:
     build: .
     image: linux-resource:latest
     container_name: linux-resource
     pid: host
-    # Publica em todas as interfaces (acessível pela rede). Para expor só na máquina local,
-    # troque por "127.0.0.1:${PORT:-10450}:10450". Em produção, use um proxy com HTTPS na frente
-    # e defina TRUST_PROXY=1 (ver README).
-    ports:
-      - "${PORT:-10450}:10450"
+    network_mode: host
     environment:
-      HOST: 0.0.0.0
-      PORT: "10450"
+      HOST: ${HOST:-0.0.0.0}
+      PORT: "${PORT:-10450}"
       DATA_DIR: /data
       SCAN_ROOT: /host
       TZ: ${TZ:-America/Sao_Paulo}
       # Token do widget de desktop (vazio = desativado). Gere com: openssl rand -hex 32
       WIDGET_TOKEN: ${WIDGET_TOKEN:-}
-      DOCKER_GID: ${DOCKER_GID:-984}
+      DOCKER_GID: ${DOCKER_GID:-124}
       # Se usar ssh-agent (chave com senha), descomente e use junto com o volume do agent:
       # SSH_AUTH_SOCK: /run/agent.sock
     # Permite leitura de telemetria de placas de vídeo NVIDIA (major 195) e DRM/AMD/Intel (major 226)
@@ -41,10 +37,12 @@ services:
       # - "${SSH_AUTH_SOCK}:/run/agent.sock"
     # Rode como o seu usuário se o uid não for 1000 (para ler a chave privada 600):
     # user: "${LOR_UID:-1000}:${LOR_GID:-1000}"
-    # Acesso ao docker.sock sem rodar como root.
-    # Descubra o GID com: stat -c '%g' /var/run/docker.sock
+    # Acesso ao docker.sock sem rodar como root (inclui GIDs padrão Ubuntu/Debian/Arch/Fedora).
     group_add:
-      - "${DOCKER_GID:-984}"
+      - "${DOCKER_GID:-124}"
+      - "984"
+      - "999"
+      - "998"
     restart: unless-stopped
 
 volumes:

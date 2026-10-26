@@ -39,6 +39,14 @@ export function RedePanel() {
   )
 
   const realIfaces = useMemo(() => (net?.interfaces ?? []).filter((i) => !i.internal && !isVirtual(i.name)), [net])
+  const primaryIface = useMemo(
+    () =>
+      realIfaces.find((i) => /^(en|eth|wl|ww|bond)/i.test(i.name) && i.ipv4 && i.operstate === 'up') ||
+      realIfaces.find((i) => i.ipv4) ||
+      realIfaces[0] ||
+      null,
+    [realIfaces],
+  )
   const totalTransferred = realIfaces.reduce((acc, i) => acc + i.rxTotal + i.txTotal, 0)
   const totalErrs = realIfaces.reduce((acc, i) => acc + i.rxErrs + i.txErrs + i.rxDrop + i.txDrop, 0)
 
@@ -67,7 +75,13 @@ export function RedePanel() {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <StatCard
+          label="IP da Máquina"
+          value={primaryIface?.ipv4 ?? '—'}
+          hint={primaryIface ? `${primaryIface.name}${primaryIface.cidr ? ` (${primaryIface.cidr})` : ''}` : 'nenhuma interface ativa'}
+          icon={<Globe className="size-4 text-cyan-400" />}
+        />
         <StatCard label="Latência" value={net?.latency != null ? `${net.latency} ms` : '—'} hint="ping 1.1.1.1" icon={<Timer className="size-4" />} />
         <StatCard
           label="Download"
@@ -123,7 +137,7 @@ export function RedePanel() {
               </Button>
             </div>
             <CardDescription>
-              {realIfaces.length} interfaces físicas · {formatBytes(totalTransferred, 1)} transferidos
+              {realIfaces.length} interfaces ativas · {formatBytes(totalTransferred, 1)} transferidos
             </CardDescription>
           </CardHeader>
           <CardContent className="px-0">
@@ -166,7 +180,13 @@ export function RedePanel() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">{i.ipv4 || '—'}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {i.ipv4 ? (
+                          <span className="text-foreground font-medium">{i.cidr || i.ipv4}</span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right font-mono text-xs text-sky-400">{formatRate(r?.rx ?? 0)}</TableCell>
                       <TableCell className="text-right font-mono text-xs text-fuchsia-400">{formatRate(r?.tx ?? 0)}</TableCell>
                       <TableCell className="text-right font-mono text-xs">{formatBytes(i.rxTotal, 1)}</TableCell>

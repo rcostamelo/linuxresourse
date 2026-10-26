@@ -121,7 +121,7 @@ Icon=linux-resource
 Terminal=false
 Type=Application
 Categories=System;Monitor;Utility;
-Keywords=linux;monitor;disk;docker;ssh;process;memory;network;gpu;
+Keywords=linux;monitor;disk;docker;ssh;process;memory;network;gpu;nginx;
 EOF
 
 # Autostart: ativa o widget na sessão GNOME de cada usuário no login.
@@ -148,7 +148,7 @@ Priority: optional
 Architecture: $ARCH
 Installed-Size: $INSTALLED_SIZE
 Depends: nodejs (>= 22.5.0), coreutils, iputils-ping, openssh-client
-Recommends: docker.io | docker-ce | docker-ce-cli, sshpass, pciutils, gnome-shell
+Recommends: docker.io | docker-ce | docker-ce-cli, nginx, sshpass, pciutils, gnome-shell
 Maintainer: Raony <rcostamelo@gmail.com>
 Homepage: https://github.com/rcostamelo/linuxresourse
 Description: Console web de telemetria, gerenciamento e otimizacao para Linux
@@ -156,15 +156,17 @@ Description: Console web de telemetria, gerenciamento e otimizacao para Linux
  para monitorar, gerenciar e otimizar desktops e servidores Linux.
  .
  Recursos incluidos:
-  - Dashboard em tempo real (CPU com temperatura, RAM, GPU, Load, Rede e Pool de Discos)
-  - Telemetria automatica e relatorio completo de GPU (NVIDIA, AMD e Intel)
+  - 4 Temas visuais (Padrao Mission Control, Retro P&B, Claro P&B e Monokai) e navegacao categorizada
+  - Dashboard em tempo real (CPU com temperatura, RAM, GPU dedicada, Load, Rede e Pool de Discos)
+  - Telemetria automatica e relatorio completo de GPU dedicada (ocultando iGPUs integradas automaticamente)
+  - Gerenciador completo do servidor Nginx (controle de servico, nginx -t, virtual hosts, editor e logs)
   - Explorador de multiplos discos fisicos e particoes com Treemap interativo
-  - Monitor de rede (interfaces, trafego, latencia e conexoes TCP ativas)
+  - Monitor de rede (IP principal do host, interfaces, trafego, latencia e conexoes TCP ativas)
   - Gerenciamento de containers e imagens Docker (logs, inspect, prune)
   - Monitoramento multi-servidor via SSH (clusters, historico, runbooks, host key e auditoria)
   - Gerenciamento CRUD de usuarios do sistema operacional e Cofre Sudo (AES-256-GCM)
   - Gerenciador de processos, detalhamento de memoria/swap e limpeza segura
-  - Widget de desktop GNOME na barra superior (CPU com temperatura, RAM, GPU quando houver, rede), opcional
+  - Widget de desktop GNOME na barra superior (CPU com temperatura, RAM, GPU dedicada, rede), opcional
 EOF
 
 cat > "$STAGE_DIR/DEBIAN/conffiles" <<'EOF'

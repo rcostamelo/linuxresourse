@@ -281,6 +281,113 @@ export interface OsUsersOverview {
   shells: string[]
 }
 
+export interface NginxUpstream {
+  location: string
+  target: string
+  websocket: boolean
+}
+
+export type NginxScope = 'site' | 'conf.d' | 'main'
+
+export interface NginxConfigItem {
+  name: string
+  scope: NginxScope
+  enabled: boolean
+  inAvailable: boolean
+  inEnabled: boolean
+  isSymlink: boolean
+  symlinkTarget: string | null
+  diverged: boolean
+  path: string
+  enabledPath: string | null
+  size: number
+  mtime: number
+  description: string | null
+  serverBlocksCount: number
+  serverNames: string[]
+  listenPorts: string[]
+  ssl: boolean
+  upstreams: NginxUpstream[]
+  roots: string[]
+  rateLimits: string[]
+}
+
+export interface NginxServiceInfo {
+  active: boolean
+  subState: string
+  enabledBoot: boolean
+  masterPid: number | null
+  uptimeSec: number | null
+  workerCount: number
+  processCount: number
+  memoryBytes: number
+  cpuPct: number
+}
+
+export interface NginxOverview {
+  ts: number
+  installed: boolean
+  version: string | null
+  rawVersion: string | null
+  service: NginxServiceInfo
+  sudo: OsSudoStatus
+  sites: NginxConfigItem[]
+  confd: NginxConfigItem[]
+  mainConfig: NginxConfigItem | null
+}
+
+export interface NginxTestResult {
+  ok: boolean
+  code: number
+  output: string
+  durationMs: number
+  usedSudo: boolean
+  needsSudo?: boolean
+}
+
+export interface NginxActionResult {
+  ok: boolean
+  action: string
+  output: string
+  durationMs: number
+  overview?: NginxOverview
+}
+
+export interface NginxFileResponse {
+  name: string
+  scope: NginxScope
+  path: string
+  content: string
+  meta: {
+    description: string | null
+    serverBlocksCount: number
+    serverNames: string[]
+    listenPorts: string[]
+    ssl: boolean
+    upstreams: NginxUpstream[]
+    roots: string[]
+    rateLimits: string[]
+  }
+}
+
+export interface NginxMutationResult {
+  ok: boolean
+  path?: string
+  name?: string
+  enabled?: boolean
+  testResult: NginxTestResult
+  reloadResult: { ok: boolean; output: string } | null
+  overview: NginxOverview
+}
+
+export interface NginxLogsResponse {
+  ok: boolean
+  kind: 'access' | 'error' | 'journal' | string
+  source: string
+  error?: string
+  lines: string[]
+}
+
 export interface NetIface {
   name: string
   mac: string | null
@@ -802,6 +909,32 @@ export const api = {
   dockerInspect: (id: string) => getJson<DockerInspect>(`/api/docker/inspect?id=${encodeURIComponent(id)}`),
   dockerAction: (id: string, action: string) =>
     postJson<DockerActionResponse>('/api/docker/action', { id, action }),
+  nginxOverview: () => getJson<NginxOverview>('/api/nginx/overview'),
+  nginxTest: () => postJson<NginxTestResult>('/api/nginx/test'),
+  nginxAction: (action: 'start' | 'stop' | 'restart' | 'reload') =>
+    postJson<NginxActionResult>('/api/nginx/action', { action }),
+  nginxReadFile: (name: string, scope: NginxScope = 'site') =>
+    getJson<NginxFileResponse>(`/api/nginx/file?name=${encodeURIComponent(name)}&scope=${encodeURIComponent(scope)}`),
+  nginxSaveSite: (input: {
+    name: string
+    scope?: NginxScope
+    content: string
+    enable?: boolean
+    reloadAfter?: boolean
+  }) => postJson<NginxMutationResult>('/api/nginx/site/save', input),
+  nginxToggleSite: (input: {
+    name: string
+    scope?: NginxScope
+    enabled: boolean
+    reloadAfter?: boolean
+  }) => postJson<NginxMutationResult>('/api/nginx/site/toggle', input),
+  nginxDeleteSite: (input: {
+    name: string
+    scope?: NginxScope
+    reloadAfter?: boolean
+  }) => postJson<NginxMutationResult>('/api/nginx/site/delete', input),
+  nginxLogs: (kind: 'access' | 'error' | 'journal' = 'error', lines = 120) =>
+    getJson<NginxLogsResponse>(`/api/nginx/logs?kind=${encodeURIComponent(kind)}&lines=${lines}`),
   kill: (pid: number, signal = 'TERM') =>
     postJson<{ ok: boolean; pid: number; signal: string }>('/api/kill', { pid, signal }),
   cleanTasks: () => getJson<CleanTasksResponse>('/api/clean/tasks'),

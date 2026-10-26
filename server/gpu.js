@@ -4,6 +4,7 @@ import path from 'node:path';
 import { SCAN_ROOT } from './config.js';
 
 const MIB = 1024 * 1024;
+const GIB = 1024 * 1024 * 1024;
 const PCI_CACHE_TTL = 5 * 60 * 1000;
 const PMON_CACHE_TTL = 4000;
 
@@ -101,6 +102,49 @@ function vendorFromHex(hex) {
   return 'GPU';
 }
 
+/**
+ * Identifica se uma placa gráfica é integrada ao processador (iGPU/APU)
+ * e não uma placa de vídeo dedicada (dGPU).
+ */
+export function isIntegratedGpu(g) {
+  if (!g) return true;
+  const vendor = String(g.vendor || '').toUpperCase();
+  const name = String(g.name || '');
+  const driver = String(g.driver || '').toLowerCase();
+  const busId = String(g.busId || '').toLowerCase();
+
+  // NVIDIA PCI/nvidia-smi é dedicada
+  if (vendor === 'NVIDIA') {
+    return false;
+  }
+
+  // Intel: iGPUs (Iris Xe, UHD, HD Graphics) usam slot 00:02.0 e não possuem mem_info_vram_total dedicado.
+  // Apenas placas dedicadas Intel Arc / Data Center GPU Max possuem VRAM dedicada >= 2 GiB fora de 00:02.0.
+  if (vendor === 'INTEL') {
+    const isDedicatedArc =
+      /\b(Arc|Alchemist|Battlemage|Data Center GPU|Flex)\b/i.test(name) &&
+      g.memTotal != null &&
+      g.memTotal >= 2 * GIB &&
+      busId !== '00:02.0';
+    if (isDedicatedArc) return false;
+    return true;
+  }
+
+  // AMD: APUs integradas têm VRAM reservada nula ou <= 1 GiB (enquanto GPUs dedicadas Radeon RX/Pro/Instinct têm >= 2 GiB)
+  if (vendor === 'AMD') {
+    if (g.memTotal == null || g.memTotal < 2 * GIB) return true;
+    if (/\b(Integrated|APU|Radeon\(TM\)\s+Graphics|^AMD Radeon Graphics$|Radeon\s+\d{3}M)\b/i.test(name)) {
+      return true;
+    }
+    return false;
+  }
+
+  // Outros vendors sem VRAM dedicada reportada
+  if (g.memTotal == null && driver !== 'nvidia') return true;
+
+  return false;
+}
+
 async function loadPciGpuNames() {
   if (Date.now() - pciNamesCache.ts < PCI_CACHE_TTL && pciNamesCache.bySlot.size > 0) {
     return pciNamesCache.bySlot;
@@ -119,11 +163,11 @@ async function loadPciGpuNames() {
         const lastBracket = bracket[bracket.length - 1].slice(1, -1).trim();
         if (/NVIDIA|GeForce|RTX|GTX|Quadro|Tesla|Radeon|Instinct|Arc|Iris|UHD|HD Graphics/i.test(lastBracket)) {
           const vendorPrefix =
-            /NVIDIA/i.test(model) && !/NVIDIA/i.test(lastBracket)
+            /\bNVIDIA\b/i.test(model) && !/NVIDIA/i.test(lastBracket)
               ? 'NVIDIA '
-              : /AMD|ATI/i.test(model) && !/AMD|Radeon/i.test(lastBracket)
+              : /\b(AMD|ATI)\b/i.test(model) && !/AMD|Radeon/i.test(lastBracket)
                 ? 'AMD '
-                : /Intel/i.test(model) && !/Intel/i.test(lastBracket)
+                : /\bIntel\b/i.test(model) && !/Intel/i.test(lastBracket)
                   ? 'Intel '
                   : '';
           model = `${vendorPrefix}${lastBracket}`;
@@ -595,7 +639,7 @@ async function readDrmGpus(pciNames) {
         const pciName = (busId && pciNames.get(busId)) || null;
         const fallbackName = pciName || `${vendor} Graphics (${card})`;
 
-        out.push({
+        const candidate = {
           index: out.length,
           id: busId ? `drm-${busId}` : card,
           name: fallbackName,
@@ -632,7 +676,12 @@ async function readDrmGpus(pciNames) {
           persistenceMode: null,
           connectors,
           processes: [],
-        });
+        };
+
+        // Ignora placas gráficas integradas (iGPU/APU), mantendo apenas placas de vídeo dedicadas
+        if (isIntegratedGpu(candidate)) continue;
+
+        out.push(candidate);
       }
       if (out.length > 0) return out;
     } catch {

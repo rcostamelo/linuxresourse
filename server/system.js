@@ -1,6 +1,6 @@
 import { promises as fsp, readFileSync, existsSync } from 'node:fs';
 import os from 'node:os';
-import { readNetDev } from './network.js';
+import { readNetDev, isVirtualIface } from './network.js';
 import { sampleGpus } from './gpu.js';
 import { sampleCpuTemp } from './cputemp.js';
 import { SCAN_ROOT } from './config.js';
@@ -204,7 +204,7 @@ async function sample() {
       const rx = Math.round(Math.max(0, (cur.rx - p.rx) / dt));
       const tx = Math.round(Math.max(0, (cur.tx - p.tx) / dt));
       perIface[name] = { rx, tx, rxTotal: cur.rx, txTotal: cur.tx, rxErrs: cur.rxErrs, txErrs: cur.txErrs };
-      if (name !== 'lo') {
+      if (!isVirtualIface(name)) {
         totalRx += rx;
         totalTx += tx;
       }

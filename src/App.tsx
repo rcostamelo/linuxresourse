@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   Boxes,
+  Check,
   ChevronDown,
   Cpu,
   Eraser,
+  Globe,
   Gpu,
   HardDrive,
   KeyRound,
+  Layers,
   LayoutDashboard,
   Loader2,
   LogOut,
@@ -20,7 +23,7 @@ import {
   User,
 } from '@/components/ui/lucide-animated'
 import { toast } from 'sonner'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
 import { Badge } from '@/components/ui/badge'
@@ -42,6 +45,7 @@ import { MemoryPanel } from '@/components/MemoryPanel'
 import { GpuPanel } from '@/components/GpuPanel'
 import { RedePanel } from '@/components/RedePanel'
 import { DockerPanel } from '@/components/DockerPanel'
+import { NginxPanel } from '@/components/NginxPanel'
 import { SshPanel } from '@/components/SshPanel'
 import { CleanupPanel } from '@/components/CleanupPanel'
 import { OsUsersPanel } from '@/components/OsUsersPanel'
@@ -49,6 +53,7 @@ import { LoginScreen } from '@/components/LoginScreen'
 import { PanelUsersModal } from '@/components/PanelUsersModal'
 import { api, UNAUTHORIZED_EVENT } from '@/lib/api'
 import type { AuthHostSummary, AuthUser } from '@/lib/api'
+import { ThemeProvider, ThemeSwitcher, useTheme } from '@/lib/theme'
 import { usePoll } from '@/lib/usePoll'
 import { formatBytes, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -92,17 +97,17 @@ function HeaderStat({
     <div
       title={title}
       className={cn(
-        'relative flex min-w-[116px] flex-col justify-between gap-1.5 overflow-hidden rounded-lg border bg-card/75 px-3 py-1.5 backdrop-blur-md transition-colors',
+        'relative flex min-w-[88px] shrink-0 flex-col justify-between gap-1 overflow-hidden rounded-lg border bg-card/75 px-2.5 py-1 backdrop-blur-md transition-colors',
         isCritical ? 'border-rose-500/40 bg-rose-950/20' : 'border-cyan-500/15 hover:border-cyan-400/30',
       )}
     >
-      <div className="flex items-center gap-2">
-        <div className="grid size-6 shrink-0 place-items-center rounded-md bg-cyan-500/10 ring-1 ring-cyan-400/20">
+      <div className="flex items-center gap-1.5">
+        <div className="grid size-5 shrink-0 place-items-center rounded-md bg-cyan-500/10 ring-1 ring-cyan-400/20">
           {icon}
         </div>
         <div className="min-w-0 flex-1 leading-tight">
-          <div className="flex items-center justify-between gap-1.5">
-            <span className="font-mono text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
+          <div className="flex items-center justify-between gap-1">
+            <span className="font-mono text-[9px] font-medium tracking-wider text-muted-foreground uppercase">
               {label}
             </span>
             {pct !== undefined && (
@@ -116,7 +121,7 @@ function HeaderStat({
               </span>
             )}
           </div>
-          <div className="truncate font-mono text-xs font-semibold tracking-tight text-foreground tabular-nums">
+          <div className="truncate font-mono text-[11px] font-semibold tracking-tight text-foreground tabular-nums">
             {value}
           </div>
         </div>
@@ -206,12 +211,12 @@ function UserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => void }) 
 
   return (
     <>
-      <div ref={menuRef} className="relative">
+      <div ref={menuRef} className="relative shrink-0">
         <button
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
           className={cn(
-            'flex items-center gap-2 rounded-lg border bg-card/75 px-3 py-1.5 font-mono text-xs backdrop-blur-md transition-colors',
+            'flex items-center gap-1.5 rounded-lg border bg-card/75 px-2.5 py-1.5 font-mono text-xs backdrop-blur-md transition-colors',
             menuOpen
               ? 'border-cyan-400/40 bg-cyan-500/10 text-cyan-200'
               : 'border-cyan-500/15 text-foreground hover:border-cyan-400/30 hover:bg-card',
@@ -225,8 +230,8 @@ function UserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => void }) 
         </button>
 
         {menuOpen && (
-          <div className="absolute right-0 z-50 mt-1.5 w-48 overflow-hidden rounded-xl border border-cyan-500/25 bg-popover/95 p-1 shadow-[0_12px_40px_rgba(0,0,0,0.65)] backdrop-blur-xl">
-            <div className="border-b border-white/10 px-2.5 py-2">
+          <div className="absolute right-0 top-full z-50 mt-1.5 w-48 overflow-hidden rounded-xl border border-cyan-500/30 bg-popover p-1 shadow-[0_18px_50px_rgba(0,0,0,0.8)]">
+            <div className="border-b border-border px-2.5 py-2">
               <div className="font-mono text-xs font-semibold text-foreground">{user.username}</div>
               <div className="font-mono text-[10px] tracking-wider text-cyan-400/80 uppercase">{user.role || 'admin'}</div>
             </div>
@@ -323,9 +328,254 @@ function UserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => void }) 
   )
 }
 
+interface NavItem {
+  value: string
+  label: string
+  desc: string
+  icon: React.ReactNode
+}
+
+interface NavGroup {
+  id: string
+  label: string
+  icon: React.ReactNode
+  items: NavItem[]
+}
+
+function CategorizedNavBar({
+  activeTab,
+  onSelectTab,
+  hasGpu,
+}: {
+  activeTab: string
+  onSelectTab: (v: string) => void
+  hasGpu: boolean
+}) {
+  const [openGroup, setOpenGroup] = useState<string | null>(null)
+  const navRef = useRef<HTMLDivElement | null>(null)
+
+  const groups: NavGroup[] = useMemo(() => {
+    const hardwareItems: NavItem[] = [
+      {
+        value: 'processos',
+        label: 'Processos',
+        desc: 'CPU, threads e árvore de execução',
+        icon: <Cpu className="size-3.5 text-violet-400" />,
+      },
+      {
+        value: 'memoria',
+        label: 'Memória',
+        desc: 'RAM, buffers, cache e swap',
+        icon: <MemoryStick className="size-3.5 text-emerald-400" />,
+      },
+      {
+        value: 'disco',
+        label: 'Disco',
+        desc: 'Partições, NVMe/SSD e uso por pasta',
+        icon: <HardDrive className="size-3.5 text-amber-400" />,
+      },
+    ]
+    if (hasGpu) {
+      hardwareItems.push({
+        value: 'gpu',
+        label: 'GPU',
+        desc: 'VRAM, clocks, sensores e processos',
+        icon: <Gpu className="size-3.5 text-cyan-400" />,
+      })
+    }
+
+    return [
+      {
+        id: 'hardware',
+        label: 'Hardware & Recursos',
+        icon: <Cpu className="size-3.5" />,
+        items: hardwareItems,
+      },
+      {
+        id: 'servicos',
+        label: 'Serviços & Rede',
+        icon: <Layers className="size-3.5" />,
+        items: [
+          {
+            value: 'nginx',
+            label: 'Nginx',
+            desc: 'Virtual hosts, proxy reverso e logs',
+            icon: <Globe className="size-3.5 text-emerald-400" />,
+          },
+          {
+            value: 'docker',
+            label: 'Docker',
+            desc: 'Containers, imagens, logs e volumes',
+            icon: <Boxes className="size-3.5 text-sky-400" />,
+          },
+          {
+            value: 'rede',
+            label: 'Rede',
+            desc: 'Interfaces, banda, latência e conexões TCP',
+            icon: <Network className="size-3.5 text-cyan-400" />,
+          },
+          {
+            value: 'ssh',
+            label: 'SSH & Clusters',
+            desc: 'Monitoramento remoto e runbooks SSH',
+            icon: <Server className="size-3.5 text-violet-400" />,
+          },
+        ],
+      },
+      {
+        id: 'sistema',
+        label: 'Administração & Sistema',
+        icon: <ShieldCheck className="size-3.5" />,
+        items: [
+          {
+            value: 'usuarios',
+            label: 'Usuários (SO)',
+            desc: 'Contas Linux, grupos e cofre sudo',
+            icon: <User className="size-3.5 text-cyan-400" />,
+          },
+          {
+            value: 'limpeza',
+            label: 'Limpeza',
+            desc: 'Caches, logs systemd e pacotes órfãos',
+            icon: <Eraser className="size-3.5 text-amber-400" />,
+          },
+        ],
+      },
+    ]
+  }, [hasGpu])
+
+  useEffect(() => {
+    if (!openGroup) return
+    function onDocClick(e: MouseEvent) {
+      if (navRef.current && !navRef.current.contains(e.target as Node)) {
+        setOpenGroup(null)
+      }
+    }
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpenGroup(null)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDocClick)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [openGroup])
+
+  const activeDashboard = activeTab === 'dashboard'
+
+  return (
+    <div
+      ref={navRef}
+      data-slot="tabs-list"
+      className="relative z-30 inline-flex flex-wrap items-center gap-1 rounded-xl bg-card/90 p-1 text-muted-foreground shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] ring-1 ring-cyan-500/15"
+    >
+      {/* Dashboard Fixo */}
+      <button
+        type="button"
+        onClick={() => {
+          setOpenGroup(null)
+          onSelectTab('dashboard')
+        }}
+        className={cn(
+          'relative inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium tracking-wide whitespace-nowrap transition-all',
+          activeDashboard
+            ? 'border-cyan-400/30 bg-gradient-to-b from-cyan-500/15 to-emerald-500/10 text-cyan-200 shadow-[0_0_16px_-4px_rgba(34,211,238,0.35)] after:pointer-events-none after:absolute after:inset-x-2.5 after:bottom-0 after:h-[2px] after:rounded-full after:bg-gradient-to-r after:from-cyan-400 after:to-emerald-400'
+            : 'border-transparent text-muted-foreground hover:bg-cyan-500/5 hover:text-foreground',
+        )}
+      >
+        <LayoutDashboard className={cn('size-3.5', activeDashboard && 'text-cyan-400')} />
+        <span>Dashboard</span>
+      </button>
+
+      {/* Dropdowns Categorizados */}
+      {groups.map((group) => {
+        const activeChild = group.items.find((i) => i.value === activeTab)
+        const isOpen = openGroup === group.id
+
+        return (
+          <div key={group.id} className="relative">
+            <button
+              type="button"
+              onClick={() => setOpenGroup((cur) => (cur === group.id ? null : group.id))}
+              className={cn(
+                'relative inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium tracking-wide whitespace-nowrap transition-all',
+                activeChild
+                  ? 'border-cyan-400/30 bg-gradient-to-b from-cyan-500/15 to-emerald-500/10 text-cyan-200 shadow-[0_0_16px_-4px_rgba(34,211,238,0.35)] after:pointer-events-none after:absolute after:inset-x-2.5 after:bottom-0 after:h-[2px] after:rounded-full after:bg-gradient-to-r after:from-cyan-400 after:to-emerald-400'
+                  : isOpen
+                    ? 'border-cyan-400/25 bg-cyan-500/10 text-foreground'
+                    : 'border-transparent text-muted-foreground hover:bg-cyan-500/5 hover:text-foreground',
+              )}
+            >
+              <span className={cn(activeChild && 'text-cyan-400')}>{group.icon}</span>
+              <span>{group.label}</span>
+              {activeChild && (
+                <span className="rounded-md border border-cyan-400/30 bg-cyan-500/15 px-1.5 py-0.2 font-mono text-[10px] font-semibold text-cyan-200">
+                  {activeChild.label}
+                </span>
+              )}
+              <ChevronDown
+                className={cn(
+                  'size-3.5 text-muted-foreground transition-transform duration-200',
+                  isOpen && 'rotate-180 text-cyan-300',
+                )}
+              />
+            </button>
+
+            {isOpen && (
+              <div className="absolute left-0 top-full z-50 mt-1.5 w-64 overflow-hidden rounded-xl border border-cyan-500/30 bg-popover p-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.8)]">
+                <div className="border-b border-border px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+                  {group.label}
+                </div>
+                <div className="mt-1 space-y-0.5">
+                  {group.items.map((item) => {
+                    const isItemActive = item.value === activeTab
+                    return (
+                      <button
+                        key={item.value}
+                        type="button"
+                        onClick={() => {
+                          onSelectTab(item.value)
+                          setOpenGroup(null)
+                        }}
+                        className={cn(
+                          'flex w-full items-center justify-between gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors',
+                          isItemActive
+                            ? 'bg-cyan-500/15 text-foreground ring-1 ring-cyan-400/30'
+                            : 'text-foreground/90 hover:bg-muted/80',
+                        )}
+                      >
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <div className="grid size-7 shrink-0 place-items-center rounded-md border border-border bg-background">
+                            {item.icon}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate font-mono text-xs font-semibold leading-tight">
+                              {item.label}
+                            </div>
+                            <div className="truncate text-[10px] text-muted-foreground">
+                              {item.desc}
+                            </div>
+                          </div>
+                        </div>
+                        {isItemActive && <Check className="size-3.5 shrink-0 text-cyan-400" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   const { data: sys } = usePoll(api.system, 2000)
   const { data: mem } = usePoll(api.memory, 2000)
+  const [activeTab, setActiveTab] = useState('dashboard')
 
   const cpu = sys?.cpuUsage ?? 0
   const memPct = mem ? (mem.used / mem.total) * 100 : 0
@@ -335,34 +585,35 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
 
   return (
     <div className="min-h-dvh bg-transparent">
-      <header className="sticky top-0 z-30 border-b border-cyan-500/15 bg-background/80 shadow-[0_4px_30px_rgba(0,0,0,0.45)] backdrop-blur-xl before:pointer-events-none before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-cyan-400/45 before:to-transparent">
-        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-4 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="relative">
+      <header className="sticky top-0 z-40 border-b border-cyan-500/15 bg-background/85 shadow-[0_4px_30px_rgba(0,0,0,0.45)] backdrop-blur-xl before:pointer-events-none before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-cyan-400/45 before:to-transparent">
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-2 px-4 py-2.5 sm:px-6 lg:flex-nowrap">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="relative shrink-0">
               <div className="absolute -inset-1 rounded-xl bg-cyan-500/15 blur-md" />
               <img
                 src="/logo-mark.png"
                 alt="Linux Resource"
-                width={44}
-                height={44}
-                className="relative size-11 shrink-0 rounded-lg object-cover ring-1 ring-cyan-400/25"
+                width={38}
+                height={38}
+                className="relative size-9.5 shrink-0 rounded-lg object-cover ring-1 ring-cyan-400/25"
               />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base leading-tight font-semibold tracking-tight">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h1 className="truncate text-sm leading-tight font-semibold tracking-tight sm:text-base">
                   Linux Resource
                 </h1>
-                <span className="inline-flex items-center gap-1 rounded-md border border-cyan-400/25 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wider text-cyan-300 uppercase">
-                  <Terminal className="size-2.5" /> Mission Control v{APP_VERSION}
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-cyan-400/25 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wider text-cyan-300 uppercase">
+                  <Terminal className="size-2.5" />
+                  <span className="hidden 2xl:inline">Mission Control</span> v{APP_VERSION}
                 </span>
               </div>
-              <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+              <p className="mt-0.5 flex items-center gap-1 font-mono text-[10px] truncate text-muted-foreground">
                 {sys ? (
                   <>
                     <span className="text-cyan-300/90">{sys.hostname}</span>
                     <span className="text-cyan-500/40">//</span>
-                    <span>{sys.platform}</span>
+                    <span className="truncate">{sys.platform}</span>
                     <span className="text-cyan-500/40">//</span>
                     <span>{sys.arch}</span>
                   </>
@@ -373,9 +624,9 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
             </div>
           </div>
 
-          <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-1.5 lg:flex-nowrap">
             <HeaderStat
-              icon={<Cpu className="size-3.5 text-violet-400" />}
+              icon={<Cpu className="size-3 text-violet-400" />}
               label="CPU"
               value={sys ? (sys.cpuTemp?.available && sys.cpuTemp.temperature != null ? `${sys.ncpu} vCPU · ${sys.cpuTemp.temperature.toFixed(0)}°C` : `${sys.ncpu} vCPU`) : '—'}
               title={sys?.cpuTemp?.available ? `${sys.cpuModel} · sensor ${sys.cpuTemp.label ?? sys.cpuTemp.sensor}` : sys?.cpuModel}
@@ -383,7 +634,7 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               barColor="bg-gradient-to-r from-violet-500 to-cyan-400 shadow-[0_0_8px_rgba(139,92,246,0.5)]"
             />
             <HeaderStat
-              icon={<MemoryStick className="size-3.5 text-emerald-400" />}
+              icon={<MemoryStick className="size-3 text-emerald-400" />}
               label="RAM"
               value={mem ? formatBytes(mem.used, 1) : '—'}
               progress={memPct}
@@ -391,7 +642,7 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
             />
             {primaryGpu && (
               <HeaderStat
-                icon={<Gpu className="size-3.5 text-cyan-400" />}
+                icon={<Gpu className="size-3 text-cyan-400" />}
                 label={gpuInfo && gpuInfo.count > 1 ? `GPU (${gpuInfo.count})` : 'GPU'}
                 title={`${primaryGpu.name}${primaryGpu.driver ? ` · Driver ${primaryGpu.driver}` : ''}`}
                 value={
@@ -406,109 +657,86 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               />
             )}
             <HeaderStat
-              icon={<Activity className="size-3.5 text-amber-400" />}
+              icon={<Activity className="size-3 text-amber-400" />}
               label="Load"
               value={(sys?.loadavg ?? [0, 0, 0]).map((l) => l.toFixed(2)).join(' · ')}
               progress={loadPct}
               barColor="bg-gradient-to-r from-amber-500 to-orange-400"
             />
             <HeaderStat
-              icon={<Radio className="size-3.5 text-sky-400" />}
+              icon={<Radio className="size-3 text-sky-400" />}
               label="Uptime"
               value={sys ? formatDuration(sys.uptime) : '—'}
             />
             <Badge
               variant="outline"
-              className="h-auto gap-1.5 border-emerald-500/25 bg-emerald-500/10 px-2.5 py-2 font-mono text-[11px] text-emerald-300"
+              className="h-auto shrink-0 gap-1.5 border-emerald-500/25 bg-emerald-500/10 px-2 py-1.5 font-mono text-[10px] text-emerald-300"
             >
-              <span className="size-2 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+              <span className="size-1.5 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
               {sys ? 'ONLINE' : 'SYNC'}
             </Badge>
+            <ThemeSwitcher />
             <UserMenu user={user} onLogout={onLogout} />
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-[1400px] px-4 py-5 sm:px-6">
-        <Tabs defaultValue="dashboard">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <TabsList className="flex-wrap">
-              <TabsTrigger value="dashboard">
-                <LayoutDashboard className="size-4" /> Dashboard
-              </TabsTrigger>
-              <TabsTrigger value="rede">
-                <Network className="size-4" /> Rede
-              </TabsTrigger>
-              <TabsTrigger value="docker">
-                <Boxes className="size-4" /> Docker
-              </TabsTrigger>
-              <TabsTrigger value="ssh">
-                <Server className="size-4" /> SSH
-              </TabsTrigger>
-              <TabsTrigger value="disco">
-                <HardDrive className="size-4" /> Disco
-              </TabsTrigger>
-              <TabsTrigger value="processos">
-                <Cpu className="size-4" /> Processos
-              </TabsTrigger>
-              <TabsTrigger value="memoria">
-                <MemoryStick className="size-4" /> Memória
-              </TabsTrigger>
-              {primaryGpu && (
-                <TabsTrigger value="gpu">
-                  <Gpu className="size-4" /> GPU
-                </TabsTrigger>
-              )}
-              <TabsTrigger value="usuarios">
-                <User className="size-4" /> Usuários
-              </TabsTrigger>
-              <TabsTrigger value="limpeza">
-                <Eraser className="size-4" /> Limpeza
-              </TabsTrigger>
-            </TabsList>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <div className="relative z-30 mb-4 flex flex-wrap items-center justify-between gap-3">
+            <CategorizedNavBar
+              activeTab={activeTab}
+              onSelectTab={setActiveTab}
+              hasGpu={Boolean(primaryGpu)}
+            />
 
             <div className="hidden items-center gap-2 rounded-lg border border-cyan-500/15 bg-card/60 px-3 py-1.5 font-mono text-[11px] text-muted-foreground backdrop-blur-md xl:flex">
               <span className="size-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
               <span>POLLING: 2000ms</span>
               <span className="text-cyan-500/40">|</span>
               <span className="text-cyan-300/90">
-                /proc · /sys · docker.sock{primaryGpu ? ` · ${primaryGpu.vendor} GPU` : ''}
+                /proc · /sys · nginx · docker.sock{primaryGpu ? ` · ${primaryGpu.vendor} GPU` : ''}
               </span>
             </div>
           </div>
 
-          <TabsContent value="dashboard">
-            <Dashboard />
-          </TabsContent>
-          <TabsContent value="rede">
-            <RedePanel />
-          </TabsContent>
-          <TabsContent value="docker">
-            <DockerPanel />
-          </TabsContent>
-          <TabsContent value="ssh">
-            <SshPanel />
-          </TabsContent>
-          <TabsContent value="disco">
-            <DiskExplorer />
-          </TabsContent>
-          <TabsContent value="processos">
-            <ProcessManager />
-          </TabsContent>
-          <TabsContent value="memoria">
-            <MemoryPanel />
-          </TabsContent>
-          {primaryGpu && (
-            <TabsContent value="gpu">
-              <GpuPanel />
+          <div className="relative z-0">
+            <TabsContent value="dashboard">
+              <Dashboard />
             </TabsContent>
-          )}
-          <TabsContent value="limpeza">
-            <CleanupPanel />
-          </TabsContent>
-          <TabsContent value="usuarios">
-            <OsUsersPanel />
-          </TabsContent>
+            <TabsContent value="rede">
+              <RedePanel />
+            </TabsContent>
+            <TabsContent value="nginx">
+              <NginxPanel />
+            </TabsContent>
+            <TabsContent value="docker">
+              <DockerPanel />
+            </TabsContent>
+            <TabsContent value="ssh">
+              <SshPanel />
+            </TabsContent>
+            <TabsContent value="disco">
+              <DiskExplorer />
+            </TabsContent>
+            <TabsContent value="processos">
+              <ProcessManager />
+            </TabsContent>
+            <TabsContent value="memoria">
+              <MemoryPanel />
+            </TabsContent>
+            {primaryGpu && (
+              <TabsContent value="gpu">
+                <GpuPanel />
+              </TabsContent>
+            )}
+            <TabsContent value="limpeza">
+              <CleanupPanel />
+            </TabsContent>
+            <TabsContent value="usuarios">
+              <OsUsersPanel />
+            </TabsContent>
+          </div>
         </Tabs>
       </main>
 
@@ -520,11 +748,16 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
           <span className="text-cyan-500/50">//</span>
           <span>gerenciar, monitorar e otimizar</span>
           <span className="hidden text-cyan-500/50 sm:inline">//</span>
-          <span className="hidden sm:inline">telemetria em tempo real via /proc, /sys e Docker</span>
+          <span className="hidden sm:inline">telemetria em tempo real via /proc, /sys, Nginx e Docker</span>
         </div>
       </footer>
     </div>
   )
+}
+
+function ThemedToaster() {
+  const { themeMeta } = useTheme()
+  return <Toaster theme={themeMeta.isDark ? 'dark' : 'light'} position="bottom-right" />
 }
 
 export default function App() {
@@ -571,22 +804,24 @@ export default function App() {
   }, [])
 
   return (
-    <TooltipProvider>
-      {loading ? (
-        <Splash />
-      ) : user ? (
-        <Console user={user} onLogout={logout} />
-      ) : (
-        <LoginScreen
-          mode={setup ? 'setup' : 'login'}
-          host={hostInfo}
-          onSuccess={(u) => {
-            setUser(u)
-            setSetup(false)
-          }}
-        />
-      )}
-      <Toaster theme="dark" position="bottom-right" />
-    </TooltipProvider>
+    <ThemeProvider>
+      <TooltipProvider>
+        {loading ? (
+          <Splash />
+        ) : user ? (
+          <Console user={user} onLogout={logout} />
+        ) : (
+          <LoginScreen
+            mode={setup ? 'setup' : 'login'}
+            host={hostInfo}
+            onSuccess={(u) => {
+              setUser(u)
+              setSetup(false)
+            }}
+          />
+        )}
+        <ThemedToaster />
+      </TooltipProvider>
+    </ThemeProvider>
   )
 }
