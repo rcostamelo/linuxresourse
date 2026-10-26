@@ -29,6 +29,7 @@ mkdir -p \
   "$STAGE_DIR/usr/share/applications" \
   "$STAGE_DIR/usr/share/pixmaps" \
   "$STAGE_DIR/usr/share/gnome-shell/extensions" \
+  "$STAGE_DIR/usr/share/plasma/plasmoids" \
   "$STAGE_DIR/etc/xdg/autostart" \
   "$STAGE_DIR/var/lib/$PKG_NAME"
 
@@ -39,9 +40,21 @@ cp "$ROOT_DIR/package.json" "$STAGE_DIR/opt/$PKG_NAME/package.json"
 [ -f "$ROOT_DIR/README.md" ] && cp "$ROOT_DIR/README.md" "$STAGE_DIR/opt/$PKG_NAME/README.md"
 [ -f "$ROOT_DIR/public/logo-mark.png" ] && cp "$ROOT_DIR/public/logo-mark.png" "$STAGE_DIR/usr/share/pixmaps/$PKG_NAME.png"
 
-# Widget de desktop (extensão GNOME Shell), instalado para todos os usuários
+# 1. Widget para GNOME Shell (instalado em /usr/share/gnome-shell/extensions)
 WIDGET_UUID="linux-resource-widget@linuxresource.local"
 cp -r "$ROOT_DIR/widget/gnome-extension/$WIDGET_UUID" "$STAGE_DIR/usr/share/gnome-shell/extensions/$WIDGET_UUID"
+
+# 2. Widget para KDE Plasma (Plasmoid instalado em /usr/share/plasma/plasmoids)
+KDE_PLASMOID_ID="org.linuxresource.widget"
+cp -r "$ROOT_DIR/widget/kde-plasmoid/$KDE_PLASMOID_ID" "$STAGE_DIR/usr/share/plasma/plasmoids/$KDE_PLASMOID_ID"
+
+# 3. Launcher de Janela Nativa (GTK4/GTK3 WebKitGTK ou modo App standalone sem barra de navegador)
+cp "$ROOT_DIR/scripts/linux-resource-window.sh" "$STAGE_DIR/usr/bin/linux-resource-window"
+chmod 0755 "$STAGE_DIR/usr/bin/linux-resource-window"
+
+# 4. Detector automático de Desktop Environment (GNOME ou KDE Plasma) para ativar o widget na barra
+cp "$ROOT_DIR/scripts/linux-resource-desktop-setup.sh" "$STAGE_DIR/usr/bin/linux-resource-desktop-setup"
+chmod 0755 "$STAGE_DIR/usr/bin/linux-resource-desktop-setup"
 
 # Arquivo de configuração em /etc/default/linux-resource
 cat > "$STAGE_DIR/etc/default/$PKG_NAME" <<'EOF'
@@ -49,8 +62,73 @@ cat > "$STAGE_DIR/etc/default/$PKG_NAME" <<'EOF'
 HOST=0.0.0.0
 PORT=10450
 DATA_DIR=/var/lib/linux-resource
+# NODE_BIN=/caminho/para/node (opcional; detecta automaticamente /usr/bin/node ou NVM/FNM/Volta)
 # TRUST_PROXY=0
 EOF
+
+# Runner inteligente que localiza Node >= 22 em /usr/bin, /usr/local/bin, /root/.nvm ou /home/*/.nvm
+cat > "$STAGE_DIR/opt/$PKG_NAME/run-server.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+find_node() {
+  if [ -n "${NODE_BIN:-}" ] && [ -x "$NODE_BIN" ]; then
+    echo "$NODE_BIN"
+    return 0
+  fi
+
+  local candidates=()
+  for p in /usr/local/bin/node /usr/bin/node /root/.volta/bin/node /root/.local/share/fnm/aliases/default/bin/node; do
+    [ -x "$p" ] && candidates+=("$p")
+  done
+
+  shopt -s nullglob
+  for p in \
+    /root/.nvm/versions/node/v*/bin/node \
+    /home/*/.nvm/versions/node/v*/bin/node \
+    /home/*/.local/share/fnm/node-versions/v*/installation/bin/node \
+    /home/*/.volta/bin/node \
+    /usr/local/nvm/versions/node/v*/bin/node; do
+    [ -x "$p" ] && candidates+=("$p")
+  done
+  shopt -u nullglob
+
+  local best=""
+  local best_major=0
+  for bin in "${candidates[@]}"; do
+    local ver major
+    ver="$("$bin" -v 2>/dev/null || true)"
+    major="$(echo "${ver#v}" | cut -d. -f1)"
+    if [[ "$major" =~ ^[0-9]+$ ]] && [ "$major" -ge 22 ] && [ "$major" -ge "$best_major" ]; then
+      best="$bin"
+      best_major="$major"
+    fi
+  done
+
+  if [ -n "$best" ]; then
+    echo "$best"
+    return 0
+  fi
+
+  if command -v node >/dev/null 2>&1; then
+    command -v node
+    return 0
+  fi
+
+  return 1
+}
+
+RESOLVED_NODE="$(find_node || true)"
+if [ -z "$RESOLVED_NODE" ]; then
+  echo "Erro: Node.js >= 22.5 nao encontrado em /usr/bin nem em NVM/FNM/Volta." >&2
+  exit 1
+fi
+
+NODE_DIR="$(dirname "$RESOLVED_NODE")"
+export PATH="$NODE_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+exec "$RESOLVED_NODE" --disable-warning=ExperimentalWarning /opt/linux-resource/server/index.js
+EOF
+chmod 0755 "$STAGE_DIR/opt/$PKG_NAME/run-server.sh"
 
 # Unidade systemd
 cat > "$STAGE_DIR/lib/systemd/system/$PKG_NAME.service" <<'EOF'
@@ -65,7 +143,7 @@ Type=simple
 EnvironmentFile=-/etc/default/linux-resource
 EnvironmentFile=-/etc/linux-resource/widget.env
 WorkingDirectory=/opt/linux-resource
-ExecStart=/usr/bin/env node --disable-warning=ExperimentalWarning /opt/linux-resource/server/index.js
+ExecStart=/opt/linux-resource/run-server.sh
 Restart=on-failure
 RestartSec=3
 StandardOutput=journal
@@ -87,8 +165,14 @@ if [ -f /etc/default/linux-resource ]; then
   source /etc/default/linux-resource
 fi
 
-cmd="${1:-status}"
+cmd="${1:-app}"
 case "$cmd" in
+  app|window|gui)
+    exec /usr/bin/linux-resource-window
+    ;;
+  widget)
+    exec /usr/bin/linux-resource-desktop-setup
+    ;;
   status)
     systemctl status linux-resource.service --no-pager
     ;;
@@ -98,41 +182,54 @@ case "$cmd" in
   logs)
     journalctl -u linux-resource.service -f -n 100
     ;;
-  open)
+  open|browser)
     xdg-open "http://127.0.0.1:${PORT}" >/dev/null 2>&1 &
-    echo "Abrindo http://127.0.0.1:${PORT} ..."
+    echo "Abrindo http://127.0.0.1:${PORT} no navegador..."
     ;;
   *)
-    echo "Uso: linux-resource {status|start|stop|restart|logs|open}"
-    echo "Console web disponível em: http://127.0.0.1:${PORT}"
+    echo "Uso: linux-resource {app|window|widget|status|start|stop|restart|logs|open}"
+    echo "  app / window : Abre o aplicativo em janela dedicada do Linux (sem abas de navegador)"
+    echo "  widget       : Detecta GNOME ou KDE Plasma e ativa o widget na barra do sistema"
+    echo "  status/logs  : Consulta o servico systemd"
+    echo "  open         : Abre em uma aba do navegador padrao (http://127.0.0.1:${PORT})"
     exit 1
     ;;
 esac
 EOF
 chmod 0755 "$STAGE_DIR/usr/bin/$PKG_NAME"
 
-# Atalho Desktop (.desktop)
+# Atalho Desktop (.desktop) -> abre a janela dedicada nativa (sem barra de navegador)
 cat > "$STAGE_DIR/usr/share/applications/$PKG_NAME.desktop" <<'EOF'
 [Desktop Entry]
 Name=Linux Resource
-Comment=Console de telemetria, gerenciamento e otimização para Linux
-Exec=xdg-open http://127.0.0.1:10450
+Comment=Console nativo de telemetria, gerenciamento e otimização para Linux
+Exec=/usr/bin/linux-resource-window
 Icon=linux-resource
 Terminal=false
 Type=Application
+StartupNotify=true
+StartupWMClass=linux-resource
 Categories=System;Monitor;Utility;
-Keywords=linux;monitor;disk;docker;ssh;process;memory;network;gpu;nginx;
+Keywords=linux;monitor;disk;docker;ssh;process;memory;network;gpu;nginx;procman;pm2;
+Actions=OpenBrowser;EnableWidget;
+
+[Desktop Action OpenBrowser]
+Name=Abrir no Navegador Web
+Exec=xdg-open http://127.0.0.1:10450
+
+[Desktop Action EnableWidget]
+Name=Ativar Widget na Barra (GNOME / KDE)
+Exec=/usr/bin/linux-resource-desktop-setup
 EOF
 
-# Autostart: ativa o widget na sessão GNOME de cada usuário no login.
-# gnome-extensions enable apenas acrescenta a extensão à lista, sem apagar as outras.
-cat > "$STAGE_DIR/etc/xdg/autostart/$PKG_NAME-widget.desktop" <<EOF
+# Autostart XDG universal: detecta se o login gráfico é GNOME ou KDE Plasma e ativa o widget correspondente
+cat > "$STAGE_DIR/etc/xdg/autostart/$PKG_NAME-widget.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
-Name=Linux Resource Widget
-Comment=Ativa o widget de telemetria na barra superior do GNOME
-Exec=gnome-extensions enable $WIDGET_UUID
-OnlyShowIn=GNOME;
+Name=Linux Resource Bar Widget (GNOME & KDE)
+Comment=Detecta GNOME ou KDE Plasma e ativa o widget de telemetria na barra do sistema
+Exec=/usr/bin/linux-resource-desktop-setup
+OnlyShowIn=GNOME;KDE;ubuntu;pop;
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
 EOF
@@ -147,26 +244,32 @@ Section: admin
 Priority: optional
 Architecture: $ARCH
 Installed-Size: $INSTALLED_SIZE
-Depends: nodejs (>= 22.5.0), coreutils, iputils-ping, openssh-client
-Recommends: docker.io | docker-ce | docker-ce-cli, nginx, sshpass, pciutils, gnome-shell
+Depends: coreutils, iputils-ping, openssh-client
+Recommends: nodejs (>= 22.5.0), docker.io | docker-ce | docker-ce-cli, nginx, sshpass, pciutils
+Suggests: python3-gi, gir1.2-webkit-6.0 | gir1.2-webkit2-4.1, gnome-shell, plasma-workspace
 Maintainer: Raony <rcostamelo@gmail.com>
 Homepage: https://github.com/rcostamelo/linuxresourse
-Description: Console web de telemetria, gerenciamento e otimizacao para Linux
- Linux Resource e um console web moderno (Mission Control / Cyber-Telemetry)
+Description: Aplicativo e console de telemetria, gerenciamento e otimizacao para Linux
+ Linux Resource e um aplicativo desktop/servidor moderno (Mission Control)
  para monitorar, gerenciar e otimizar desktops e servidores Linux.
  .
+ Funciona em janela dedicada nativa no Linux (WebKitGTK ou App Window) e também
+ via navegador web, além de incluir widgets nativos para GNOME Shell e KDE Plasma.
+ Suporta Node.js via apt (/usr/bin/node) ou instalado via NVM/FNM/Volta.
+ .
  Recursos incluidos:
+  - Janela dedicada de aplicativo Linux (/usr/bin/linux-resource-window) sem abas/barra de navegador
+  - Widgets nativos para barra do GNOME Shell e painel do KDE Plasma (deteccao automatica)
   - 4 Temas visuais (Padrao Mission Control, Retro P&B, Claro P&B e Monokai) e navegacao categorizada
   - Dashboard em tempo real (CPU com temperatura, RAM, GPU dedicada, Load, Rede e Pool de Discos)
-  - Telemetria automatica e relatorio completo de GPU dedicada (ocultando iGPUs integradas automaticamente)
+  - Plugin Multi-Usuario para Procman (procmand) e PM2 (supervisao global de root e /home/*)
+  - Telemetria automatica e relatorio completo de GPU dedicada (ocultando iGPUs integradas)
   - Gerenciador completo do servidor Nginx (controle de servico, nginx -t, virtual hosts, editor e logs)
   - Explorador de multiplos discos fisicos e particoes com Treemap interativo
   - Monitor de rede (IP principal do host, interfaces, trafego, latencia e conexoes TCP ativas)
   - Gerenciamento de containers e imagens Docker (logs, inspect, prune)
   - Monitoramento multi-servidor via SSH (clusters, historico, runbooks, host key e auditoria)
   - Gerenciamento CRUD de usuarios do sistema operacional e Cofre Sudo (AES-256-GCM)
-  - Gerenciador de processos, detalhamento de memoria/swap e limpeza segura
-  - Widget de desktop GNOME na barra superior (CPU com temperatura, RAM, GPU dedicada, rede), opcional
 EOF
 
 cat > "$STAGE_DIR/DEBIAN/conffiles" <<'EOF'
@@ -200,9 +303,10 @@ fi
 echo ""
 echo "=================================================================="
 echo " Linux Resource instalado com sucesso!"
-echo " Acesse no navegador: http://localhost:10450"
-echo " Comandos rapidos:    linux-resource {status|logs|restart|open}"
-echo " Configuracao:        /etc/default/linux-resource"
+echo " Abrir aplicativo nativo: linux-resource app"
+echo " Ativar widget (GNOME/KDE): linux-resource widget"
+echo " Acesso via navegador:    http://localhost:10450"
+echo " Comandos do servico:     linux-resource {status|logs|restart}"
 echo "=================================================================="
 echo ""
 EOF

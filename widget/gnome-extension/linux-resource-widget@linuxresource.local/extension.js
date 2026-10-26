@@ -66,6 +66,18 @@ function metric(iconName) {
   return { box, text };
 }
 
+function launchNativeWindow() {
+  try {
+    GLib.spawn_command_line_async('/usr/bin/linux-resource-window');
+  } catch {
+    try {
+      GLib.spawn_command_line_async('xdg-open http://127.0.0.1:10450');
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 export default class LinuxResourceWidget extends Extension {
   enable() {
     this._session = new Soup.Session({ timeout: 3 });
@@ -77,7 +89,7 @@ export default class LinuxResourceWidget extends Extension {
     this._cpu = metric(ICONS.cpu);
     this._ram = metric(ICONS.ram);
     this._gpu = metric(ICONS.gpu);
-    this._gpu.box.visible = false; // só aparece quando existir placa de vídeo
+    this._gpu.box.visible = false; // só aparece quando existir placa de vídeo dedicada
     this._net = metric(ICONS.net);
     for (const m of [this._cpu, this._ram, this._gpu, this._net]) row.add_child(m.box);
     this._indicator.add_child(row);
@@ -87,7 +99,14 @@ export default class LinuxResourceWidget extends Extension {
     this._swapItem = new PopupMenu.PopupMenuItem('', { reactive: false, can_focus: false });
     this._gpuItem = new PopupMenu.PopupMenuItem('', { reactive: false, can_focus: false });
     this._gpuItem.visible = false;
-    for (const item of [this._hostItem, this._loadItem, this._swapItem, this._gpuItem]) this._indicator.menu.addMenuItem(item);
+    for (const item of [this._hostItem, this._loadItem, this._swapItem, this._gpuItem]) {
+      this._indicator.menu.addMenuItem(item);
+    }
+
+    this._indicator.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+    this._openAppItem = new PopupMenu.PopupMenuItem('Abrir Aplicativo Linux Resource');
+    this._openAppItem.connect('activate', () => launchNativeWindow());
+    this._indicator.menu.addMenuItem(this._openAppItem);
 
     // Lado direito da barra, logo após o relógio.
     Main.panel.addToStatusArea(this.uuid, this._indicator, 0, 'right');
@@ -112,6 +131,9 @@ export default class LinuxResourceWidget extends Extension {
 
   _refresh() {
     if (this._busy || !this._session) return;
+    if (!this._token) {
+      this._token = readToken();
+    }
     if (!this._token) {
       this._setOffline('sem token');
       return;

@@ -388,6 +388,95 @@ export interface NginxLogsResponse {
   lines: string[]
 }
 
+export type ProcManagerEngine = 'procman' | 'pm2'
+
+export interface ProcManagerUserRuntime {
+  username: string
+  uid: number
+  home: string
+  hasNode: boolean
+  nodeBin: string | null
+  procmanBin: string | null
+  pm2Bin: string | null
+}
+
+export interface ProcManagerDaemon {
+  engine: ProcManagerEngine
+  owner: string
+  ownerUid: number
+  stateDir: string
+  running: boolean
+  pid: number | null
+  version: string | null
+  onlineCount: number
+  totalCount: number
+  savedCount: number
+  binPath: string | null
+}
+
+export interface ProcManagedProcess {
+  uidKey: string
+  engine: ProcManagerEngine
+  owner: string
+  ownerUid: number
+  id: number
+  name: string
+  namespace: string
+  mode: 'fork' | 'cluster' | string
+  instances: number
+  pids: number[]
+  pid: number | string
+  ports: (number | string)[]
+  status: 'online' | 'stopped' | 'errored' | 'launching' | 'saved' | string
+  restarts: number
+  unstableRestarts: number
+  exitCode: number | null
+  uptimeMs: number
+  cpu: number
+  memory: number
+  maxMemoryRestart: number | string | null
+  watch: boolean
+  cron: string | null
+  autorestart: boolean
+  script: string
+  cwd: string
+  args: string[]
+  outLog: string
+  errLog: string
+  nodeVersion?: string | null
+  savedOnly: boolean
+}
+
+export interface ProcManagersOverview {
+  ts: number
+  runtimes: {
+    procmanInstalled: boolean
+    procmanBin: string | null
+    pm2Installed: boolean
+    pm2Bin: string | null
+    nodeBin: string | null
+    users: ProcManagerUserRuntime[]
+  }
+  sudo: OsSudoStatus
+  daemons: ProcManagerDaemon[]
+  processes: ProcManagedProcess[]
+}
+
+export interface ProcManagerMutationResult {
+  ok: boolean
+  output: string
+  overview: ProcManagersOverview
+}
+
+export interface ProcManagerLogsResponse {
+  engine: ProcManagerEngine
+  owner: string
+  outLog: string
+  errLog: string
+  outLines: string[]
+  errLines: string[]
+}
+
 export interface NetIface {
   name: string
   mac: string | null
@@ -935,6 +1024,40 @@ export const api = {
   }) => postJson<NginxMutationResult>('/api/nginx/site/delete', input),
   nginxLogs: (kind: 'access' | 'error' | 'journal' = 'error', lines = 120) =>
     getJson<NginxLogsResponse>(`/api/nginx/logs?kind=${encodeURIComponent(kind)}&lines=${lines}`),
+  procManagersOverview: () => getJson<ProcManagersOverview>('/api/proc-managers/overview'),
+  procManagerAction: (input: {
+    engine: ProcManagerEngine
+    owner: string
+    action: 'restart' | 'reload' | 'stop' | 'delete' | 'scale' | 'save' | 'resurrect' | 'kill-daemon'
+    target?: string
+    instances?: number
+  }) => postJson<ProcManagerMutationResult>('/api/proc-managers/action', input),
+  procManagerStart: (input: {
+    engine: ProcManagerEngine
+    owner: string
+    script: string
+    name?: string
+    namespace?: string
+    cwd?: string
+    mode?: 'fork' | 'cluster'
+    instances?: string | number
+    maxMemoryRestart?: string
+    cron?: string
+    watch?: boolean
+    args?: string
+  }) => postJson<ProcManagerMutationResult>('/api/proc-managers/start', input),
+  procManagerLogs: (params: {
+    engine: ProcManagerEngine
+    owner: string
+    outLog: string
+    errLog: string
+    lines?: number
+  }) =>
+    getJson<ProcManagerLogsResponse>(
+      `/api/proc-managers/logs?engine=${encodeURIComponent(params.engine)}&owner=${encodeURIComponent(params.owner)}&outLog=${encodeURIComponent(params.outLog)}&errLog=${encodeURIComponent(params.errLog)}&lines=${params.lines ?? 120}`
+    ),
+  procManagerInstall: (owner?: string) =>
+    postJson<ProcManagerMutationResult>('/api/proc-managers/install-procman', { owner }),
   kill: (pid: number, signal = 'TERM') =>
     postJson<{ ok: boolean; pid: number; signal: string }>('/api/kill', { pid, signal }),
   cleanTasks: () => getJson<CleanTasksResponse>('/api/clean/tasks'),

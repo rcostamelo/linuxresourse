@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Terminal,
   User,
+  Zap,
 } from '@/components/ui/lucide-animated'
 import { toast } from 'sonner'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
@@ -47,6 +48,7 @@ import { RedePanel } from '@/components/RedePanel'
 import { DockerPanel } from '@/components/DockerPanel'
 import { NginxPanel } from '@/components/NginxPanel'
 import { SshPanel } from '@/components/SshPanel'
+import { ProcManagersPanel } from '@/components/ProcManagersPanel'
 import { CleanupPanel } from '@/components/CleanupPanel'
 import { OsUsersPanel } from '@/components/OsUsersPanel'
 import { LoginScreen } from '@/components/LoginScreen'
@@ -397,6 +399,12 @@ function CategorizedNavBar({
         icon: <Layers className="size-3.5" />,
         items: [
           {
+            value: 'procman',
+            label: 'Procman & PM2',
+            desc: 'Supervisores multi-usuário (root e /home/*)',
+            icon: <Zap className="size-3.5 text-cyan-400" />,
+          },
+          {
             value: 'nginx',
             label: 'Nginx',
             desc: 'Virtual hosts, proxy reverso e logs',
@@ -695,7 +703,7 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               <span>POLLING: 2000ms</span>
               <span className="text-cyan-500/40">|</span>
               <span className="text-cyan-300/90">
-                /proc · /sys · nginx · docker.sock{primaryGpu ? ` · ${primaryGpu.vendor} GPU` : ''}
+                /proc · /sys · procman · pm2 · nginx · docker.sock{primaryGpu ? ` · ${primaryGpu.vendor} GPU` : ''}
               </span>
             </div>
           </div>
@@ -703,6 +711,9 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
           <div className="relative z-0">
             <TabsContent value="dashboard">
               <Dashboard />
+            </TabsContent>
+            <TabsContent value="procman">
+              <ProcManagersPanel />
             </TabsContent>
             <TabsContent value="rede">
               <RedePanel />
@@ -748,7 +759,7 @@ function Console({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
           <span className="text-cyan-500/50">//</span>
           <span>gerenciar, monitorar e otimizar</span>
           <span className="hidden text-cyan-500/50 sm:inline">//</span>
-          <span className="hidden sm:inline">telemetria em tempo real via /proc, /sys, Nginx e Docker</span>
+          <span className="hidden sm:inline">telemetria em tempo real via /proc, /sys, Procman, PM2, Nginx e Docker</span>
         </div>
       </footer>
     </div>

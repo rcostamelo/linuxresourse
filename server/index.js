@@ -23,6 +23,13 @@ import {
   deleteNginxSite,
   getNginxLogs,
 } from './nginx.js';
+import {
+  getProcManagersOverview,
+  runProcManagerAction,
+  startProcManagerApp,
+  getProcManagerLogs,
+  installProcmandGlobal,
+} from './procmanPm2.js';
 import { getInterfaces, getTcpStates, getLatency, getConnections } from './network.js';
 import {
   getDockerStatus,
@@ -237,8 +244,15 @@ const PUBLIC_API = new Set([
   '/api/auth/logout',
 ]);
 
-// Widget de desktop: leitura compacta, protegida por token (header X-Widget-Token).
+// Widget de desktop (GNOME Shell e KDE Plasma): aceita conexões loopback locais ou token X-Widget-Token.
+function isLoopbackRequest(req) {
+  const remote = String(req.socket?.remoteAddress || "");
+  return remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
+}
+
 function isWidgetAuthorized(req) {
+  if (isLoopbackRequest(req)) return true;
+  if (!WIDGET_TOKEN) return false;
   const given = Buffer.from(String(req.headers['x-widget-token'] || ''));
   const expected = Buffer.from(WIDGET_TOKEN);
   return given.length === expected.length && timingSafeEqual(given, expected);
@@ -333,7 +347,6 @@ const server = createServer(async (req, res) => {
     if (p.startsWith('/api/auth/')) return await handleAuth(req, res, p, url);
 
     if (p === '/api/widget/metrics' && req.method === 'GET') {
-      if (!WIDGET_TOKEN) return json(res, 404, { error: 'widget desativado (defina WIDGET_TOKEN)' });
       if (!isWidgetAuthorized(req)) return json(res, 401, { error: 'token do widget inválido' });
       return json(res, 200, await widgetMetrics());
     }
@@ -491,6 +504,47 @@ const server = createServer(async (req, res) => {
       const kind = String(url.searchParams.get('kind') || 'error');
       const lines = Number(url.searchParams.get('lines')) || 120;
       return json(res, 200, await getNginxLogs({ kind, lines }));
+    }
+
+    /* ------------------------ Plugins: procman & PM2 ----------------------- */
+    if (p === '/api/proc-managers/overview' && req.method === 'GET') {
+      return json(res, 200, await getProcManagersOverview());
+    }
+
+    if (p === '/api/proc-managers/action' && req.method === 'POST') {
+      const body = await readJson(req);
+      try {
+        return json(res, 200, await runProcManagerAction(body, actorFromRes(res)));
+      } catch (err) {
+        return json(res, 400, { ok: false, error: String(err.message || err) });
+      }
+    }
+
+    if (p === '/api/proc-managers/start' && req.method === 'POST') {
+      const body = await readJson(req);
+      try {
+        return json(res, 200, await startProcManagerApp(body, actorFromRes(res)));
+      } catch (err) {
+        return json(res, 400, { ok: false, error: String(err.message || err) });
+      }
+    }
+
+    if (p === '/api/proc-managers/logs' && req.method === 'GET') {
+      const engine = String(url.searchParams.get('engine') || 'procman');
+      const owner = String(url.searchParams.get('owner') || '');
+      const outLog = String(url.searchParams.get('outLog') || '');
+      const errLog = String(url.searchParams.get('errLog') || '');
+      const lines = Number(url.searchParams.get('lines')) || 120;
+      return json(res, 200, await getProcManagerLogs({ engine, owner, outLog, errLog, lines }));
+    }
+
+    if (p === '/api/proc-managers/install-procman' && req.method === 'POST') {
+      const body = await readJson(req);
+      try {
+        return json(res, 200, await installProcmandGlobal(body, actorFromRes(res)));
+      } catch (err) {
+        return json(res, 400, { ok: false, error: String(err.message || err) });
+      }
     }
 
     if (p === '/api/clean/tasks') return json(res, 200, await listTasks());

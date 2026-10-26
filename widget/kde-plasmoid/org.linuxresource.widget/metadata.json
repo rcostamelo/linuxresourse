@@ -1,0 +1,22 @@
+{
+  "KPackageStructure": "Plasma/Applet",
+  "KPlugin": {
+    "Authors": [
+      {
+        "Email": "rcostamelo@gmail.com",
+        "Name": "Raony"
+      }
+    ],
+    "Category": "System Information",
+    "Description": "Widget de barra do KDE Plasma com CPU, temperatura, RAM, GPU dedicada e tráfego de rede alimentado pelo Linux Resource.",
+    "Icon": "linux-resource",
+    "Id": "org.linuxresource.widget",
+    "License": "MIT",
+    "Name": "Linux Resource Widget",
+    "Version": "1.0.7",
+    "Website": "https://github.com/rcostamelo/linuxresourse"
+  },
+  "X-Plasma-API": "declarativeappletscript",
+  "X-Plasma-API-Minimum-Version": "6.0",
+  "X-Plasma-MainScript": "ui/main.qml"
+}
