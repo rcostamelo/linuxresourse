@@ -326,14 +326,9 @@ export function desktopInstallCommand(release) {
     download ${shQuote(asset.downloadUrl)} "$tmp_dir"/${shQuote(expectedName)}
     download ${shQuote(release.checksumUrl)} "$tmp_dir"/SHA256SUMS
     (cd "$tmp_dir" && sha256sum --check SHA256SUMS)
-    set -- "$tmp_dir"/${shQuote(expectedName)}
-    if command -v gnome-shell >/dev/null 2>&1; then
-      set -- "$@" gnome-shell-extension-appindicator
-      if ! python3 -c 'import importlib.util; assert any(importlib.util.find_spec(p) for p in ("PyQt6", "PyQt5"))' >/dev/null 2>&1; then
-        set -- "$@" python3-pyqt6
-      fi
-    fi
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"
+    # A bandeja e a extensão GNOME são opcionais e podem não existir nos
+    # repositórios do host. Não devem impedir a atualização do pacote principal.
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$tmp_dir"/${shQuote(expectedName)}
     installed=$(dpkg-query -W -f='\${Version}' linux-resource)
     [ "$installed" = ${shQuote(release.version)} ] || { echo 'A versão do pacote instalado não corresponde à release.' >&2; exit 1; }
     if [ -x /usr/bin/linux-resource-desktop-setup ] && id ${shQuote(primary.username)} >/dev/null 2>&1; then

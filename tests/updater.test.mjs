@@ -48,6 +48,8 @@ function fixture(t) {
   script('apt-get', 'printf "apt-get %s\\n" "$*" >> "$TEST_LOG"');
   script('dpkg-query', 'printf "1.0.11"');
   script('curl', 'case "$2" in */SHA256SUMS) cp "$TEST_SUMS" "$4" ;; *) cp "$TEST_PACKAGE" "$4" ;; esac');
+  script('gnome-shell', 'exit 0');
+  script('python3', 'exit 1');
 
   const environment = {
     ...process.env,
@@ -82,6 +84,7 @@ test('atualiza por fast-forward, confere o pacote e usa o projeto Compose existe
   assert.equal(readFileSync(path.join(f.checkout, 'tracked.txt'), 'utf8'), 'release\n');
   const calls = readFileSync(f.log, 'utf8');
   assert.match(calls, /apt-get install -y --no-install-recommends/);
+  assert.doesNotMatch(calls, /python3-pyqt6|gnome-shell-extension-appindicator/);
   assert.match(calls, /docker compose .*--project-name linuxresourse .*docker-compose\.host\.yml up -d --build/);
 });
 
