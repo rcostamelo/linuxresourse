@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """Linux Resource — ícone de bandeja (system tray).
 
 Roda junto com a sessão gráfica (autostart XDG) e funciona em KDE Plasma e GNOME:
@@ -72,6 +72,7 @@ def fmt_rate(bps):
 
 def find_window_bin():
     for cand in (
+        "/usr/bin/linux-resource-window",
         shutil.which("linux-resource-window"),
         os.path.join(HOME, ".local/share/bin/linux-resource-window"),
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "linux-resource-window.sh"),
@@ -302,7 +303,7 @@ def run_qt(state):
     app = QApplication(sys.argv[:1])
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("Linux Resource")
-    app.setDesktopFileName(APP_ID)
+    app.setDesktopFileName("org.linuxresource.app")
 
     base = QIcon.fromTheme("linux-resource")
     if base.isNull():

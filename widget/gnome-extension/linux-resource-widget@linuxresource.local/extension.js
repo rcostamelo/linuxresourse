@@ -54,9 +54,9 @@ function panelLabel(text, style = 'font-weight: 600;') {
 function launchNativeWindow() {
   const home = GLib.get_home_dir();
   const candidates = [
+    '/usr/bin/linux-resource-window',
     `${home}/.local/bin/linux-resource-window`,
     `${home}/.local/share/bin/linux-resource-window`,
-    '/usr/bin/linux-resource-window',
   ];
   for (const bin of candidates) {
     if (GLib.file_test(bin, GLib.FileTest.IS_EXECUTABLE)) {

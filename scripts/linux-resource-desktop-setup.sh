@@ -8,10 +8,30 @@ KDE_ID="org.linuxresource.widget"
 
 DE="$(printf '%s %s %s' "${XDG_CURRENT_DESKTOP:-}" "${DESKTOP_SESSION:-}" "${XDG_SESSION_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')"
 
-# Remova somente o alias simbólico criado por versões antigas do pacote.
-legacy_launcher="${XDG_DATA_HOME:-$HOME/.local/share}/applications/linux-resource.desktop"
-if [ -L "$legacy_launcher" ] && [ "$(readlink "$legacy_launcher")" = "org.linuxresource.app.desktop" ]; then
-  rm -f "$legacy_launcher"
+# Migra os atalhos criados pela instalação antiga por usuário, sem sobrescrever
+# configurações personalizadas. Os arquivos originais ficam fora do menu.
+data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+applications="$data_home/applications"
+canonical="$applications/org.linuxresource.app.desktop"
+legacy_launcher="$applications/linux-resource.desktop"
+backup_root="$data_home/linux-resource/desktop-backups"
+if [ -f /usr/share/applications/org.linuxresource.app.desktop ]; then
+  if [ -L "$legacy_launcher" ] && [ "$(readlink -f "$legacy_launcher")" = "$(readlink -f "$canonical")" ]; then
+    rm -f "$legacy_launcher"
+  fi
+  if [ -f "$canonical" ] && [ ! -L "$canonical" ] && \
+     grep -Fxq "Exec=$HOME/.local/share/bin/linux-resource-window" "$canonical"; then
+    mkdir -p "$backup_root"
+    backup_dir="$(mktemp -d "$backup_root/launcher-XXXXXXXX")"
+    mv "$canonical" "$backup_dir/org.linuxresource.app.desktop"
+  fi
+  user_tray="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/linux-resource-tray.desktop"
+  if [ -f "$user_tray" ] && grep -Fxq "Exec=$HOME/.local/share/bin/linux-resource-tray" "$user_tray" && \
+     ! grep -Eiq '^Hidden=true|^X-GNOME-Autostart-enabled=false' "$user_tray"; then
+    mkdir -p "$backup_root"
+    backup_dir="$(mktemp -d "$backup_root/tray-XXXXXXXX")"
+    mv "$user_tray" "$backup_dir/linux-resource-tray.desktop"
+  fi
 fi
 
 sync_gnome_widget() {

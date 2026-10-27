@@ -16,9 +16,11 @@ URL="$BASE_URL"
 [ -n "$TAB" ] && URL="${BASE_URL}/#${TAB}"
 
 # 1. Janela nativa GTK4 + WebKitGTK (com application_id = linux-resource para associar o ícone no Wayland/KDE/GNOME)
-if command -v python3 >/dev/null 2>&1; then
-  if python3 -c "import gi; gi.require_version('Gtk', '4.0'); gi.require_version('WebKit', '6.0')" >/dev/null 2>&1; then
-    if GSK_RENDERER=cairo WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 python3 - "$BASE_URL" "$TAB" <<'PYEOF'
+PYTHON="$(command -v python3 || true)"
+if [ -x /usr/bin/python3 ]; then PYTHON=/usr/bin/python3; fi
+if [ -n "$PYTHON" ]; then
+  if "$PYTHON" -c "import gi; gi.require_version('Gtk', '4.0'); gi.require_version('WebKit', '6.0')" >/dev/null 2>&1; then
+    if GSK_RENDERER=cairo WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 "$PYTHON" - "$BASE_URL" "$TAB" <<'PYEOF'
 import os, sys, gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('WebKit', '6.0')
@@ -100,8 +102,8 @@ PYEOF
       exit 0
     fi
   fi
-  if python3 -c "import gi; gi.require_version('Gtk', '3.0'); gi.require_version('WebKit2', '4.1')" >/dev/null 2>&1; then
-    if WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 python3 - "$URL" <<'PYEOF'
+  if "$PYTHON" -c "import gi; gi.require_version('Gtk', '3.0'); gi.require_version('WebKit2', '4.1')" >/dev/null 2>&1; then
+    if WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 "$PYTHON" - "$URL" <<'PYEOF'
 import sys, os, gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('WebKit2', '4.1')
