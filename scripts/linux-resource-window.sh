@@ -158,7 +158,9 @@ fi
 
 # 2. Janela dedicada sem barra de endereço / abas via motores Chromium instalados no Linux (--app)
 PROFILE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/linux-resource-window"
-mkdir -p "$PROFILE_DIR"
+LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/linux-resource"
+mkdir -p "$LOG_DIR"
+LAUNCH_LOG="$LOG_DIR/window-launch.log"
 
 for bin in \
   google-chrome \
@@ -171,16 +173,38 @@ for bin in \
   vivaldi \
   opera; do
   if command -v "$bin" >/dev/null 2>&1; then
+    browser_profile="$PROFILE_DIR"
+    # O Chromium Snap não pode gravar arbitrariamente em ~/.config.
+    if [ "$bin" = chromium ] && command -v snap >/dev/null 2>&1 && snap list chromium >/dev/null 2>&1; then
+      browser_profile="$HOME/snap/chromium/common/linux-resource-window"
+    fi
+    if ! mkdir -p "$browser_profile" || [ ! -w "$browser_profile" ]; then
+      browser_profile="${XDG_CACHE_HOME:-$HOME/.cache}/linux-resource/browser-profile"
+      if ! mkdir -p "$browser_profile" || [ ! -w "$browser_profile" ]; then
+        echo "Não foi possível criar um perfil gravável para $bin." >&2
+        continue
+      fi
+    fi
     nohup "$bin" \
       --app="$URL" \
       --class="linux-resource" \
       --name="Linux Resource" \
-      --user-data-dir="$PROFILE_DIR" \
+      --user-data-dir="$browser_profile" \
       --window-size=1380,860 \
       --no-first-run \
       --no-default-browser-check \
-      >/dev/null 2>&1 &
-    exit 0
+      >>"$LAUNCH_LOG" 2>&1 &
+    browser_pid=$!
+    # Alguns comandos (por exemplo, wrappers do Chromium) existem mas falham
+    # imediatamente; nesse caso tente o próximo motor ou o navegador padrão.
+    sleep 2
+    if kill -0 "$browser_pid" 2>/dev/null; then
+      exit 0
+    fi
+    if wait "$browser_pid"; then
+      exit 0
+    fi
+    echo "Falha ao iniciar $bin; consulte $LAUNCH_LOG" >&2
   fi
 done
 
