@@ -326,7 +326,7 @@ export function LoginScreen({
                   <Input
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="ex: admin ou raony"
+                    placeholder="ex: admin ou User"
                     autoComplete="username"
                     autoFocus={!username}
                     className="h-10 pl-9 font-mono text-sm"
