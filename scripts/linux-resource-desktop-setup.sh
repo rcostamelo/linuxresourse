@@ -8,6 +8,12 @@ KDE_ID="org.linuxresource.widget"
 
 DE="$(printf '%s %s %s' "${XDG_CURRENT_DESKTOP:-}" "${DESKTOP_SESSION:-}" "${XDG_SESSION_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')"
 
+# Remova somente o alias simbólico criado por versões antigas do pacote.
+legacy_launcher="${XDG_DATA_HOME:-$HOME/.local/share}/applications/linux-resource.desktop"
+if [ -L "$legacy_launcher" ] && [ "$(readlink "$legacy_launcher")" = "org.linuxresource.app.desktop" ]; then
+  rm -f "$legacy_launcher"
+fi
+
 sync_gnome_widget() {
   local system_ext="/usr/share/gnome-shell/extensions/${GNOME_UUID}"
   local user_ext="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/${GNOME_UUID}"

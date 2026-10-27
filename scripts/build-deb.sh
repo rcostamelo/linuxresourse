@@ -313,6 +313,15 @@ chmod 0700 /var/lib/linux-resource
 # Endpoint do widget é somente local (loopback), sem token. Remove resíduos de versões antigas.
 rm -f /etc/linux-resource/widget.env /etc/linux-resource/widget-token
 
+# Versões antigas criavam este segundo ID como alias do mesmo aplicativo.
+legacy_launcher=/usr/share/applications/linux-resource.desktop
+if [ -L "$legacy_launcher" ] && [ "$(readlink "$legacy_launcher")" = org.linuxresource.app.desktop ]; then
+  rm -f "$legacy_launcher"
+fi
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database /usr/share/applications || true
+fi
+
 docker_backend_running() {
   command -v docker >/dev/null 2>&1 || return 1
 

@@ -18,7 +18,7 @@ URL="$BASE_URL"
 # 1. Janela nativa GTK4 + WebKitGTK (com application_id = linux-resource para associar o ícone no Wayland/KDE/GNOME)
 if command -v python3 >/dev/null 2>&1; then
   if python3 -c "import gi; gi.require_version('Gtk', '4.0'); gi.require_version('WebKit', '6.0')" >/dev/null 2>&1; then
-    GSK_RENDERER=cairo WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 python3 - "$BASE_URL" "$TAB" <<'PYEOF' >/dev/null 2>&1 &
+    if GSK_RENDERER=cairo WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 python3 - "$BASE_URL" "$TAB" <<'PYEOF'
 import os, sys, gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('WebKit', '6.0')
@@ -85,15 +85,23 @@ class LinuxResourceApp(Gtk.Application):
 
     def do_command_line(self, cmdline):
         args = cmdline.get_arguments()[1:]
-        self.show(args[0] if args else "")
-        return 0
+        try:
+            self.show(args[0] if args else "")
+            return 0
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            return 1
 
 app = LinuxResourceApp()
-app.run(["linux-resource"] + ([initial_tab] if initial_tab else []))
+sys.exit(app.run(["linux-resource"] + ([initial_tab] if initial_tab else [])))
 PYEOF
-    exit 0
-  elif python3 -c "import gi; gi.require_version('Gtk', '3.0'); gi.require_version('WebKit2', '4.1')" >/dev/null 2>&1; then
-    WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 python3 - "$URL" <<'PYEOF' >/dev/null 2>&1 &
+    then
+      exit 0
+    fi
+  fi
+  if python3 -c "import gi; gi.require_version('Gtk', '3.0'); gi.require_version('WebKit2', '4.1')" >/dev/null 2>&1; then
+    if WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 python3 - "$URL" <<'PYEOF'
 import sys, os, gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('WebKit2', '4.1')
@@ -140,7 +148,9 @@ win.add(webview)
 win.show_all()
 Gtk.main()
 PYEOF
-    exit 0
+    then
+      exit 0
+    fi
   fi
 fi
 
